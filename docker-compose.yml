@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: counseling_db
+    restart: always
+    environment:
+      MYSQL_DATABASE: mindway
+      MYSQL_ROOT_PASSWORD: root
+      TZ: Asia/Seoul
+    ports:
+      - "3307:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+09:00
+    services:
+  db:
+    
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
