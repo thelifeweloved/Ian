@@ -1,147 +1,117 @@
 import streamlit as st
-from common_ui import api_health_check_or_stop, api_get, api_post
+from common_ui import api_health_check_or_stop, api_get, api_post, api_json_or_show_error
 
-# --------------------------------
-# Page config
-# --------------------------------
-st.set_page_config(page_title="Client Chat", page_icon="💬", layout="wide")
+st.set_page_config(page_title="MindWay · Client", page_icon=None, layout="wide")
 
-# --------------------------------
-# Top bar + Styles
-# --------------------------------
-st.markdown(
-    """
-    <style>
-      /* Top bar */
-      .mw-topbar{
-        position: sticky;
-        top: 0;
-        z-index: 999;
-        background: white;
-        padding: 10px 0 12px 0;
-        border-bottom: 1px solid #f0f0f0;
-      }
-      .mw-title{
-        text-align:center;
-        font-size: 20px;
-        font-weight: 800;
-        letter-spacing: 0.2px;
-      }
+# -------------------------
+# 스타일 (실무 UX 안정형)
+# -------------------------
+st.markdown("""
+<style>
+.mw-title{
+    text-align:center;
+    font-size:24px;
+    font-weight:900;
+    margin-bottom:12px;
+}
 
-      /* Main content wrap */
-      .mw-wrap{
-        max-width: 880px;
-        margin: 0 auto;
-        padding: 14px 12px 140px 12px; /* bottom padding for input bar */
-      }
+.mw-wrap{
+    max-width:820px;
+    margin:0 auto;
+    padding-bottom:120px;
+}
 
-      /* Chat bubbles */
-      .row{display:flex; margin: 10px 0;}
-      .left{justify-content:flex-start;}
-      .right{justify-content:flex-end;}
-      .bubble{
-        padding: 12px 14px;
-        border-radius: 16px;
-        max-width: 72%;
-        word-break: break-word;
-        font-size: 15px;
-        line-height: 1.45;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-      }
-      .bub-counselor{background:#f3f4f6;}
-      .bub-client{background:#dbeafe;}
-      .name{
-        font-size: 12px;
-        color:#6b7280;
-        font-weight: 700;
-        margin: 0 2px 4px 2px;
-      }
-      .meta{
-        font-size: 11px;
-        color:#9ca3af;
-        margin-top: 4px;
-      }
+.row{display:flex; margin:10px 0;}
+.left{justify-content:flex-start;}
+.right{justify-content:flex-end;}
 
-      /* Bottom input bar (ChatGPT-like) */
-      .mw-inputbar{
-        position: fixed;
-        left: 50%;
-        transform: translateX(-50%);
-        bottom: 18px;
-        width: min(880px, calc(100vw - 40px));
-        background: white;
-        border: 1px solid #e8e8e8;
-        border-radius: 26px;
-        padding: 10px 12px 8px 12px;
-        box-shadow: 0 6px 18px rgba(0,0,0,0.10);
-        z-index: 1000;
-      }
-      .mw-inputbar .hint{
-        font-size: 12px;
-        color:#9ca3af;
-        text-align:center;
-        margin-top: 8px;
-      }
+.name{
+    font-size:12px;
+    font-weight:800;
+    margin-bottom:4px;
+    opacity:0.6;
+}
 
-      /* Streamlit TextInput styling */
-      div[data-testid="stTextInput"] input{
-        border-radius: 18px !important;
-        border: 1px solid #e5e7eb !important;
-        padding: 12px 12px !important;
-        height: 44px !important;
-      }
-      div[data-testid="stTextInput"] label{
-        display:none !important;
-      }
+.time{
+    font-size:11px;
+    opacity:0.4;
+    margin-top:3px;
+}
 
-      .mw-mini{
-        font-size: 14px;
-        color: #9ca3af;
-        font-weight: 800;
-        padding-top: 6px;
-      }
-    </style>
+.bubble{
+    padding:10px 14px;
+    border-radius:14px;
+    max-width:70%;
+    font-size:15px;
+    line-height:1.4;
+}
 
-    <div class="mw-topbar">
-      <div class="mw-title">MindWay</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+.client{
+    background:#111827;
+    color:white;
+}
 
-# --------------------------------
-# API health (stop if down)
-# --------------------------------
-api_health_check_or_stop()
+.counselor{
+    background:#f3f4f6;
+    color:#111827;
+}
 
-# --------------------------------
-# Session auto-pick (latest)
-# - 내담자 화면에는 세션선택/위험도/알럿 표시 안 함
-# --------------------------------
+.input-wrap{
+    position:fixed;
+    bottom:15px;
+    left:50%;
+    transform:translateX(-50%);
+    width:min(820px, calc(100vw - 40px));
+    background:white;
+    border:1px solid #e5e7eb;
+    border-radius:18px;
+    padding:10px;
+    box-shadow:0 10px 25px rgba(0,0,0,0.12);
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="mw-title">MindWay</div>', unsafe_allow_html=True)
+
+api_health_check_or_stop(show_success=False)
+
+# -------------------------
+# 상담 방식 선택 (핵심 UI)
+# -------------------------
+mode = st.radio("상담 방식", ["CHAT", "VOICE"], horizontal=True)
+
+if mode == "VOICE":
+    st.caption("🎤 음성 상담 모드")
+
+# -------------------------
+# 세션 자동 선택
+# -------------------------
 if "client_sess_id" not in st.session_state:
     r = api_get("/sessions", params={"limit": 1})
-    items = r.json().get("items", []) if r.ok else []
+    data = api_json_or_show_error(r)
+    items = data.get("items", [])
     st.session_state.client_sess_id = items[0]["id"] if items else None
 
 sess_id = st.session_state.client_sess_id
+
 if not sess_id:
-    st.warning("현재 연결된 상담 세션이 없습니다. (테스트 데이터가 필요해요)")
+    st.warning("상담 세션 없음")
     st.stop()
+
+# -------------------------
+# 메시지 로드
+# -------------------------
+msgs_r = api_get(f"/sessions/{sess_id}/messages", params={"limit": 300})
+msgs = api_json_or_show_error(msgs_r).get("items", [])
 
 def fmt_time(x):
     if not x:
         return ""
-    try:
-        return str(x).replace("T", " ")[:19]
-    except Exception:
-        return str(x)
+    return str(x).replace("T", " ")[:19]
 
-# --------------------------------
-# Messages render (center big)
-# --------------------------------
-msgs_r = api_get(f"/sessions/{sess_id}/messages", params={"limit": 300})
-msgs = msgs_r.json().get("items", []) if msgs_r.ok else []
-
+# -------------------------
+# 메시지 렌더링
+# -------------------------
 st.markdown('<div class="mw-wrap">', unsafe_allow_html=True)
 
 for m in msgs:
@@ -149,92 +119,60 @@ for m in msgs:
     text = m.get("text") or ""
     at = fmt_time(m.get("at"))
 
-    # 상담사 왼쪽 / 내담자 오른쪽
-    if speaker == "COUNSELOR":
-        st.markdown(
-            f"""
-            <div class="row left">
-              <div>
-                <div class="name">상담사</div>
-                <div class="bubble bub-counselor">{text}</div>
-                <div class="meta">{at}</div>
-              </div>
+    if speaker == "CLIENT":
+        st.markdown(f"""
+        <div class="row right">
+            <div>
+                <div class="name">내담자</div>
+                <div class="bubble client">{text}</div>
+                <div class="time">{at}</div>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
-    elif speaker == "CLIENT":
-        st.markdown(
-            f"""
-            <div class="row right">
-              <div>
-                <div class="name" style="text-align:right;">내담자</div>
-                <div class="bubble bub-client">{text}</div>
-                <div class="meta" style="text-align:right;">{at}</div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.markdown(
-            f"""
-            <div class="row left">
-              <div>
-                <div class="name">SYSTEM</div>
-                <div class="bubble bub-counselor">{text}</div>
-                <div class="meta">{at}</div>
-              </div>
+        st.markdown(f"""
+        <div class="row left">
+            <div>
+                <div class="name">상담사</div>
+                <div class="bubble counselor">{text}</div>
+                <div class="time">{at}</div>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+        </div>
+        """, unsafe_allow_html=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --------------------------------
-# Bottom input bar (fixed)
-# --------------------------------
-st.markdown('<div class="mw-inputbar">', unsafe_allow_html=True)
+# -------------------------
+# 입력 바 (마이크 포함)
+# -------------------------
+st.markdown('<div class="input-wrap">', unsafe_allow_html=True)
 
 with st.form("send_form", clear_on_submit=True):
-    user_text = st.text_input("메시지", placeholder="무엇이든 물어보세요", label_visibility="collapsed")
+    col1, col2 = st.columns([6, 1])
 
-    c1, c2, c3 = st.columns([1, 6, 2])
-    with c1:
-        # UI 느낌용 + (기능은 아직 안 붙임)
-        st.markdown('<div class="mw-mini">＋</div>', unsafe_allow_html=True)
-    with c2:
-        st.write("")  # spacing
-    with c3:
-        sent = st.form_submit_button("전송", use_container_width=True)
+    with col1:
+        user_text = st.text_input("msg", placeholder="메시지를 입력하세요", label_visibility="collapsed")
 
-if sent:
-    if not user_text.strip():
-        st.warning("메시지를 입력하세요.")
-        st.stop()
+    with col2:
+        if mode == "VOICE":
+            st.markdown("🎤", help="음성 입력 모드")
+        sent = st.form_submit_button("전송")
+
+if sent and user_text.strip():
 
     payload = {
         "sess_id": int(sess_id),
         "speaker": "CLIENT",
         "speaker_id": 1,
-        "text": user_text.strip()
+        "text": user_text,
+        "stt_conf": 0.9 if mode == "VOICE" else 1.0
     }
-    resp = api_post("/messages", json=payload)
 
-    if resp.ok:
+    r = api_post("/messages", json=payload)
+
+    if r.ok:
         st.rerun()
     else:
-        st.error(f"전송 실패: {resp.status_code}")
-        st.code(resp.text)
-
-st.markdown(
-    """
-    <div class="hint">
-      ChatGPT는 실수를 할 수 있습니다. 중요한 정보는 재차 확인하세요.
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+        st.error("전송 실패")
 
 st.markdown("</div>", unsafe_allow_html=True)
