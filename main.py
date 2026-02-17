@@ -8,9 +8,13 @@ from dotenv import load_dotenv
 
 from db import get_db
 
+# 하이퍼 클로바 X AI 상담 도우미 연결
+from routers.helper import router as helper_router
+
 load_dotenv()
 
 app = FastAPI(title="Mindway Post-Analysis API", version="1.0.1")
+app.include_router(helper_router)
 
 
 # =========================================================

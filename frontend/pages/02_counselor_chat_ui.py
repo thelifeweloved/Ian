@@ -114,7 +114,6 @@ st.markdown(
                     radial-gradient(circle at 70% 60%, rgba(236,72,153,0.18), transparent 58%),
                     radial-gradient(circle at 40% 80%, rgba(34,197,94,0.15), transparent 60%);
         transform: rotate(8deg);
-        filter: blur(0px);
       }
       .mw-live{
         position:absolute; top:10px; left:10px;
@@ -206,9 +205,12 @@ st.markdown(
 )
 
 # --------------------------------
-# API health
+# API health (호환형 호출)
 # --------------------------------
-api_health_check_or_stop(show_success=False)
+try:
+    api_health_check_or_stop(show_success=False)
+except TypeError:
+    api_health_check_or_stop()
 
 # --------------------------------
 # Helpers
@@ -221,6 +223,14 @@ def fmt_time(x):
 def last_client_text(msgs: List[Dict[str, Any]]) -> str:
     for m in reversed(msgs):
         if (m.get("speaker") or "").upper() == "CLIENT":
+            t = (m.get("text") or "").strip()
+            if t:
+                return t
+    return ""
+
+def last_counselor_text(msgs: List[Dict[str, Any]]) -> str:
+    for m in reversed(msgs):
+        if (m.get("speaker") or "").upper() == "COUNSELOR":
             t = (m.get("text") or "").strip()
             if t:
                 return t
@@ -249,10 +259,6 @@ def coach_tip(text: str) -> str:
     )
 
 def deepface_demo_result() -> Dict[str, Any]:
-    """
-    발표/테스트용 안정 데모 결과(랜덤).
-    실제 deepface 연결 전까지는 이 결과를 사용하면 UI가 살아있음.
-    """
     options = [
         {"emo": "안정", "emoji": "🙂", "score": 0.83, "hint": "표정이 안정적입니다."},
         {"emo": "불안", "emoji": "😟", "score": 0.74, "hint": "불안 신호가 감지됩니다."},
@@ -260,6 +266,32 @@ def deepface_demo_result() -> Dict[str, Any]:
         {"emo": "분노", "emoji": "😠", "score": 0.62, "hint": "긴장/방어 반응이 보입니다."},
     ]
     return random.choice(options)
+
+def helper_suggestion(sess_id: int, counselor_id: int, msgs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    /helper/suggestion 호출
+    - 성공하면 {"mode": "...", "suggestion": "..."}
+    - 실패하면 {"mode": "ERROR", "suggestion": "..."}
+    """
+    payload = {
+        "sess_id": int(sess_id),
+        "counselor_id": int(counselor_id),
+        "last_client_text": last_client_text(msgs),
+        "last_counselor_text": last_counselor_text(msgs),
+        "context": {}
+    }
+
+    try:
+        r = api_post("/helper/suggestion", json=payload)
+        if not r.ok:
+            return {"mode": "ERROR", "suggestion": f"헬퍼 호출 실패: {r.status_code}"}
+        data = r.json() if r.text else {}
+        return {
+            "mode": data.get("mode", "RULE"),
+            "suggestion": data.get("suggestion", "") or "응답이 비어있습니다."
+        }
+    except Exception as e:
+        return {"mode": "ERROR", "suggestion": f"헬퍼 호출 예외: {e}"}
 
 # --------------------------------
 # Sidebar settings
@@ -312,7 +344,6 @@ with left:
         text = (m.get("text") or "").strip()
         at = fmt_time(m.get("at"))
 
-        # 기존 로직 유지
         if not text and speaker != "SYSTEM":
             continue
 
@@ -321,7 +352,7 @@ with left:
                 f"""
                 <div class="row right">
                   <div style="text-align:right;">
-                    <div class="name">나 (상담사)</div>
+                    <div class="name">상담사</div>
                     <div class="bubble bub-counselor">{text}</div>
                     <div class="meta">{at}</div>
                   </div>
@@ -360,14 +391,13 @@ with left:
 
 with right:
     # -------------------------
-    # 1) Consent & Face Analysis (기존 구조 유지 + "카메라 전송 화면" 추가)
+    # 1) Consent & Face Analysis
     # -------------------------
     st.markdown("<div class='card'><div class='card-title'>표정 분석 (동의 기반)</div>", unsafe_allow_html=True)
 
     if not consent_face:
         st.markdown("<div class='muted'>내담자 동의가 없어 표정 분석이 비활성화되었습니다.</div>", unsafe_allow_html=True)
 
-        # 카메라 프레임 UI는 비활성 느낌으로도 유지 (UX 가시성)
         st.markdown(
             """
             <div class="mw-cam" style="opacity:0.55;">
@@ -379,12 +409,10 @@ with right:
         )
 
         st.markdown("</div>", unsafe_allow_html=True)
-
-        # 동의 없으면 deepface 바도 숨김(원하면 보여도 됨)
+        result = None
     else:
         st.markdown("<div class='muted'>데모에서는 이미지 업로드로 분석을 시연합니다.</div>", unsafe_allow_html=True)
 
-        # ✅ 카메라 전송 느낌 프레임(요청사항)
         st.markdown(
             """
             <div class="mw-cam">
@@ -402,27 +430,22 @@ with right:
             st.image(img, use_container_width=True)
 
             if demo_deepface:
-                # 안정적인 발표용: 항상 결과 출력 (설치/환경 영향 최소화)
                 result = deepface_demo_result()
             else:
-                # 실제 deepface 사용 시도 (설치 안 됐으면 예외 처리)
                 try:
                     from deepface import DeepFace  # type: ignore
-
                     analysis = DeepFace.analyze(img.getvalue(), actions=["emotion"], enforce_detection=False)
                     if isinstance(analysis, list) and analysis:
                         analysis = analysis[0]
 
                     emo = "unknown"
                     score = None
-
                     if isinstance(analysis, dict):
                         emo = (analysis.get("dominant_emotion") or "unknown")
                         emod = analysis.get("emotion", {}) or {}
                         if isinstance(emod, dict):
                             score = emod.get(emo, None)
 
-                    # 점수 정규화
                     if score is None:
                         result = {"emo": emo, "emoji": "🙂", "score": 0.50, "hint": "분석 결과(점수 없음)"}
                     else:
@@ -430,7 +453,6 @@ with right:
                 except Exception:
                     result = {"emo": "실패", "emoji": "⚠️", "score": 0.00, "hint": "DeepFace 미설치/오류 → 데모 모드 권장"}
 
-        # ✅ 이모지 + 점수 바(요청사항) — “화면 아래”에 항상 고정처럼 보이게
         if result:
             st.markdown(
                 f"""
@@ -468,15 +490,28 @@ with right:
         st.markdown("</div>", unsafe_allow_html=True)
 
     # -------------------------
-    # 2) AI Assistant (Coaching) (기존 유지)
+    # 2) AI Helper (헬퍼 연동 + fallback 유지)
     # -------------------------
-    st.markdown("<div class='card'><div class='card-title'>AI 도우미 · 개입 전략</div>", unsafe_allow_html=True)
-    lc = last_client_text(msgs)
-    st.info(coach_tip(lc))
+    st.markdown("<div class='card'><div class='card-title'>AI 헬퍼 · 개입 전략</div>", unsafe_allow_html=True)
+
+    h = helper_suggestion(sess_id=int(sess_id), counselor_id=int(counselor_id), msgs=msgs)
+    mode = h.get("mode", "RULE")
+    suggestion = h.get("suggestion", "")
+
+    # 헬퍼 실패 시: 기존 룰 기반 코칭으로 fallback
+    if mode == "ERROR":
+        st.warning(suggestion)
+        lc = last_client_text(msgs)
+        st.info(coach_tip(lc))
+    else:
+        # 정상
+        st.caption(f"mode: {mode}")
+        st.info(suggestion)
+
     st.markdown("</div>", unsafe_allow_html=True)
 
     # -------------------------
-    # 3) Alerts panel (optional) (기존 유지)
+    # 3) Alerts panel (optional)
     # -------------------------
     try:
         a_r = api_get(f"/sessions/{sess_id}/alerts")
@@ -486,7 +521,6 @@ with right:
             if not a:
                 st.caption("알림 없음")
             else:
-                df_a = st.dataframe  # just to avoid lint confusion
                 import pandas as pd
                 df_a = pd.DataFrame(a)
                 keep = [c for c in ["at", "type", "status", "score", "rule"] if c in df_a.columns]
@@ -496,7 +530,7 @@ with right:
         pass
 
 # --------------------------------
-# Bottom input bar (Counselor send) (기존 유지)
+# Bottom input bar (Counselor send)
 # --------------------------------
 st.markdown('<div class="mw-inputbar">', unsafe_allow_html=True)
 
@@ -527,7 +561,7 @@ if sent:
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --------------------------------
-# Auto refresh (optional) (기존 유지)
+# Auto refresh (optional)
 # --------------------------------
 if auto_refresh:
     time.sleep(int(refresh_sec))
