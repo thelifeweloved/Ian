@@ -205,21 +205,70 @@ def session_alerts(sess_id: int, db: Session = Depends(get_db)):
 
 
 # =========================================================
+# Appointments (예약 리스트 - 추가된 부분)
+# =========================================================
+@app.get("/appointments")
+def get_appointments(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
+    """
+    테이블 명세서 기반: appt(예약)와 client(내담자) 테이블을 Join하여 
+    오늘 이후의 예약 리스트와 내담자 등급(status)을 함께 반환합니다.
+    """
+    sql = """
+        SELECT 
+            a.id, 
+            c.name AS client_name, 
+            a.at, 
+            a.status, 
+            c.status AS client_grade
+        FROM appt a
+        JOIN client c ON a.client_id = c.id
+        WHERE a.counselor_id = :cid
+        ORDER BY a.at ASC
+    """
+    result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
+    return {"items": jsonable_encoder(list(result))}
+
+
+# =========================================================
 # Dashboard Support APIs (Streamlit이 호출하는 통계들)
 # =========================================================
 @app.get("/stats/topic-dropout")
 def topic_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    result = _rows(db, """
-        SELECT
-            s.channel AS channel,
-            COUNT(*) AS total,
-            (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate
-        FROM sess s
+    """
+    교정 내용: 기존 channel 기준에서 -> 명세서의 topic(주제)별 이탈률로 수정
+    """
+    sql = """
+        SELECT 
+            t.name AS topic_name,
+            COUNT(s.id) AS total,
+            (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(s.id), 0)) * 100 AS dropout_rate
+        FROM topic t
+        JOIN sess_analysis sa ON t.id = sa.topic_id
+        JOIN sess s ON sa.sess_id = s.id
         WHERE s.counselor_id = :cid
-        GROUP BY s.channel
+        GROUP BY t.id
         ORDER BY dropout_rate DESC
-    """, {"cid": counselor_id})
-    return {"items": jsonable_encoder(result)}
+    """
+    result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
+    return {"items": jsonable_encoder(list(result))}
+
+@app.get("/stats/quality-trend")
+def quality_trend(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
+    """
+    추가 내용: 대시보드 Tab 3에서 사용하는 세션 품질 점수 추이 API
+    """
+    sql = """
+        SELECT 
+            DATE_FORMAT(s.start_at, '%m-%d') AS date,
+            AVG(q.score) AS avg_quality
+        FROM quality q
+        JOIN sess s ON q.sess_id = s.id
+        WHERE s.counselor_id = :cid
+        GROUP BY DATE_FORMAT(s.start_at, '%Y-%m-%d')
+        ORDER BY date ASC
+    """
+    result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
+    return {"items": jsonable_encoder(list(result))}
 
 
 @app.get("/stats/client-grade-dropout")
