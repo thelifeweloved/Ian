@@ -8,16 +8,22 @@ from typing import Optional, Dict, Any, List
 router = APIRouter(prefix="/helper", tags=["helper"])
 
 # =========================================================
-# Request (기존 구조 유지하되 필드명만 명세서 id로 동기화)
+# Request (명세서 규격과 기존 연동의 정합성 확보)
 # =========================================================
 class HelperRequest(BaseModel):
-    session_id: int = Field(..., ge=1)       # sess_id에서 명세서 ID인 session_id로 변경 [cite: 225]
-    counselor_id: int = Field(..., ge=1)     # 명세서 counselor.id 참조 [cite: 111]
-    last_client_text: str = ""               # 기존 유지
-    last_counselor_text: str = ""           # 기존 유지
-    context: Optional[Dict[str, Any]] = None # 기존 유지
+    # 명세서 ID인 session_id를 기본으로 하되, 
+    # 기존 코드와의 호환성을 위해 sess_id라는 별칭(Alias)을 허용합니다.
+    session_id: int = Field(..., alias="sess_id", ge=1)
+    counselor_id: int = Field(..., ge=1)
+    last_client_text: str = ""
+    last_counselor_text: str = ""
+    context: Optional[Dict[str, Any]] = None
 
-NEG_KEYS = ["그만", "포기", "싫어", "힘들", "못하겠", "안 할래", "의미없"]
+    # Pydantic v2에서 별칭 사용 시 필수 설정
+    model_config = {"populate_by_name": True}
+
+# 명세서의 부정 발화 분석 목적을 반영한 키워드 확장
+NEG_KEYS = ["그만", "포기", "싫어", "힘들", "못하겠", "안 할래", "의미없", "죽고싶"]
 
 def rule_helper(text: str) -> Dict[str, Any]:
     t = (text or "").strip()
@@ -28,12 +34,14 @@ def rule_helper(text: str) -> Dict[str, Any]:
     if any(k in t for k in NEG_KEYS):
         return {
             "mode": "RULE",
+            "type": "RISK_WORD", # 명세서 alert.type 규격 일치
             "suggestion": (
                 "① 공감: 정말 힘드셨겠어요.\n"
                 "② 구체화: 가장 힘든 부분을 한 가지만 말해주실래요?\n"
                 "③ 안정화: 잠깐 호흡을 같이 맞춰볼까요?"
             ),
-            "risk_hint": "이탈 위험 신호 가능", # 명세서 alert 테이블 연동 포인트 [cite: 359]
+            "risk_hint": "이탈 위험 신호 가능", # alert 테이블 연동 포인트
+            "action": "부정적 발화 감지: 공감 및 안전 확인 질문 제안" # 명세서 alert.action 규격
         }
 
     if any(k in t for k in ["불안", "걱정"]):
@@ -48,9 +56,10 @@ def rule_helper(text: str) -> Dict[str, Any]:
     return {"mode": "RULE", "suggestion": "공감 → 구체화 질문 → 다음 행동 제안 순서 권장"}
 
 # =========================================================
-# HyperCLOVA X (기존 SSE 파싱 로직 100% 유지)
+# HyperCLOVA X (SSE 파싱 로직 및 환경변수 로드 유지)
 # =========================================================
 def _env(name: str, default: str = "") -> str:
+    # SMHRD 서버의 .env 환경변수를 안전하게 로드합니다.
     return os.getenv(name, default).strip()
 
 def call_hcx_sse(messages: List[Dict[str, str]]) -> Dict[str, Any]:
@@ -61,7 +70,7 @@ def call_hcx_sse(messages: List[Dict[str, str]]) -> Dict[str, Any]:
     timeout = int(_env("HCX_TIMEOUT", "20"))
 
     if not host or not api_key:
-        raise RuntimeError("HCX_HOST / HCX_API_KEY 가 비어있습니다. (.env 확인)")
+        raise RuntimeError("HCX_HOST / HCX_API_KEY 가 비어있습니다. SMHRD 서버의 .env를 확인하세요.")
 
     url = f"{host}/v3/chat-completions/{model}"
     headers = {
@@ -73,16 +82,17 @@ def call_hcx_sse(messages: List[Dict[str, str]]) -> Dict[str, Any]:
 
     payload = {
         "messages": messages,
-        "topP": float(_env("HCX_TOP_P", "0.8") or 0.8),
-        "topK": int(_env("HCX_TOP_K", "0") or 0),
-        "maxTokens": int(_env("HCX_MAX_TOKENS", "256") or 256),
-        "temperature": float(_env("HCX_TEMPERATURE", "0.5") or 0.5),
-        "repetitionPenalty": float(_env("HCX_REP_PENALTY", "1.1") or 1.1),
+        "topP": float(_env("HCX_TOP_P", "0.8")),
+        "topK": int(_env("HCX_TOP_K", "0")),
+        "maxTokens": int(_env("HCX_MAX_TOKENS", "256")),
+        "temperature": float(_env("HCX_TEMPERATURE", "0.5")),
+        "repetitionPenalty": float(_env("HCX_REP_PENALTY", "1.1")),
         "stop": [],
-        "seed": int(_env("HCX_SEED", "0") or 0),
+        "seed": int(_env("HCX_SEED", "0")),
         "includeAiFilters": True,
     }
 
+    # ... (팀장님의 기존 SSE 파싱 및 스트리밍 로직 100% 유지)
     last_content = ""
     final_content = ""
     last_finish_reason = None
@@ -125,9 +135,10 @@ def call_hcx_sse(messages: List[Dict[str, str]]) -> Dict[str, Any]:
 
 @router.post("/suggestion")
 def helper_suggestion(payload: HelperRequest):
-    # 기존 로직: 룰 기반 우선 체크
+    # 1. 룰 기반 우선 체크
     base = rule_helper(payload.last_client_text)
 
+    # 2. HCX 사용 여부 확인
     use_hcx = _env("USE_HCX", "0") == "1"
     if not use_hcx:
         return base

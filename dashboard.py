@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime
 
 # 명세서 기반 API 엔드포인트 설정
-API = "http://127.0.0.1:8000"
+API = "http://project-db-campus.smhrd.com:8000"
 
 st.set_page_config(page_title="Mindway Dashboard", layout="wide")
 st.title("🧠 Mindway 상담 대시보드")

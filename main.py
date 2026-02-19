@@ -7,31 +7,27 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from db import get_db
-
-# 하이퍼 클로바 X AI 상담 도우미 연결
 from routers.helper import router as helper_router
 
 load_dotenv()
 
-app = FastAPI(title="Mindway Post-Analysis API", version="1.0.1")
+app = FastAPI(title="Mindway Post-Analysis API", version="1.0.2")
 app.include_router(helper_router)
 
-
 # =========================================================
-# Request Model
+# Request Model (명세서 9p 규격 100% 반영)
 # =========================================================
 class MessageCreate(BaseModel):
     sess_id: int = Field(..., ge=1)
     speaker: str = Field(..., pattern="^(COUNSELOR|CLIENT|SYSTEM)$")
     speaker_id: Optional[int] = Field(None, ge=1)
     text: Optional[str] = None
-    emoji: Optional[str] = None
-    file_url: Optional[str] = None
+    emoji: Optional[str] = None       # [약속] 명세서 컬럼 반영
+    file_url: Optional[str] = None    # [약속] 명세서 컬럼 반영
     stt_conf: float = Field(0.0, ge=0.0, le=1.0)
 
-
 # =========================================================
-# Logic
+# Logic: 이탈 징후 탐지 및 조치 추천
 # =========================================================
 def detect_dropout_signal(message: Optional[str]) -> Optional[Dict[str, Any]]:
     if not message:
@@ -39,10 +35,13 @@ def detect_dropout_signal(message: Optional[str]) -> Optional[Dict[str, Any]]:
     msg = message.strip()
     score = 0.0
     rules = []
+    action = ""
 
+    # 이탈 징후 키워드 분석
     if any(kw in msg for kw in ["그만", "힘들", "포기", "싫어"]):
         score += 0.5
         rules.append("NEG_KEYWORD")
+        action = "내담자의 부정적 감정이 감지되었습니다. 지지와 공감이 필요합니다."
 
     if score >= 0.5:
         return {
@@ -50,48 +49,17 @@ def detect_dropout_signal(message: Optional[str]) -> Optional[Dict[str, Any]]:
             "status": "DETECTED",
             "score": round(min(score, 1.0), 2),
             "rule": "|".join(rules)[:50],
+            "action": action  # [보완] 명세서의 action 컬럼 데이터 추가
         }
     return None
 
-
 # =========================================================
-# Helpers
-# =========================================================
-def _rows(db: Session, sql: str, params: Dict[str, Any]):
-    return db.execute(text(sql), params).mappings().all()
-
-
-# =========================================================
-# Health
-# =========================================================
-@app.get("/health/db")
-def health_db(db: Session = Depends(get_db)):
-    v = db.execute(text("SELECT 1")).scalar()
-    return {"db": "ok", "ping": v}
-
-
-# =========================================================
-# Sessions
-# =========================================================
-@app.get("/sessions")
-def list_sessions(limit: int = Query(20, ge=1, le=200), db: Session = Depends(get_db)):
-    sql = f"""
-        SELECT *
-        FROM sess
-        ORDER BY id DESC
-        LIMIT {int(limit)}
-    """
-    result = _rows(db, sql, {})
-    return {"items": jsonable_encoder(result), "count": len(result)}
-
-
-# =========================================================
-# Messages (Write)
+# Messages (Write) - DB 동기화 완료
 # =========================================================
 @app.post("/messages")
 def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
     try:
-        # 세션 존재 체크(없으면 FK/에러 대신 404로)
+        # 1. 세션 존재 체크
         sess_exists = db.execute(
             text("SELECT 1 FROM sess WHERE id = :sid"),
             {"sid": payload.sess_id},
@@ -99,6 +67,7 @@ def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
         if not sess_exists:
             raise HTTPException(status_code=404, detail="sess_id not found")
 
+        # 2. 메시지 저장 (emoji, file_url 포함)
         res = db.execute(text("""
             INSERT INTO msg (sess_id, speaker, speaker_id, text, emoji, file_url, stt_conf, at)
             VALUES (:sid, :speaker, :speaker_id, :text, :emoji, :file_url, :stt_conf, NOW())
@@ -115,30 +84,45 @@ def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
         msg_id = res.lastrowid
         detection = None
 
+        # 3. 내담자 발화 시 이탈 징후 분석 및 Alert 저장
         if payload.speaker == "CLIENT":
             detection = detect_dropout_signal(payload.text)
             if detection:
                 db.execute(text("""
-                    INSERT INTO alert (sess_id, msg_id, type, status, score, rule, at)
-                    VALUES (:sid, :mid, :type, :status, :score, :rule, NOW())
+                    INSERT INTO alert (sess_id, msg_id, type, status, score, rule, action, at)
+                    VALUES (:sid, :mid, :type, :status, :score, :rule, :action, NOW())
                 """), {
                     "sid": payload.sess_id,
                     "mid": msg_id,
                     "type": detection["type"],
                     "status": detection["status"],
                     "score": detection["score"],
-                    "rule": detection["rule"]
+                    "rule": detection["rule"],
+                    "action": detection["action"]
                 })
 
         db.commit()
         return {"status": "saved", "msg_id": msg_id, "detection": detection}
 
-    except HTTPException:
-        db.rollback()
-        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+
+# =========================================================
+# Messages (Read) - 명세서 기반 SELECT
+# =========================================================
+@app.get("/sessions/{sess_id}/messages")
+def session_messages(sess_id: int, limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db)):
+    sql = f"""
+        SELECT 
+            id, sess_id, speaker, speaker_id, text, emoji, file_url, stt_conf, at
+        FROM msg
+        WHERE sess_id = :sid
+        ORDER BY at DESC
+        LIMIT {int(limit)}
+    """
+    result = db.execute(text(sql), {"sid": sess_id}).mappings().all()
+    return {"items": jsonable_encoder(list(result))}
 
 
 # =========================================================

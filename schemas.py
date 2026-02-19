@@ -55,11 +55,12 @@ class SessionItem(APIModel):
 class MessageCreate(APIModel):
     sess_id: int = Field(..., ge=1)
     speaker: Speaker
-    speaker_id: Optional[int] = Field(None, ge=1)  # SYSTEM이면 NULL 가능 :contentReference[oaicite:9]{index=9}
+    speaker_id: Optional[int] = Field(None, ge=1)
     text: Optional[str] = None
-    emoji: Optional[str] = None
-    file_url: Optional[str] = None
-    stt_conf: float = Field(0.00, ge=0.00, le=1.00)  # msg.stt_conf DECIMAL(3,2) 0~1 :contentReference[oaicite:10]{index=10}
+    emoji: Optional[str] = None       # DB 컬럼 추가 완료!
+    file_url: Optional[str] = None    # DB 컬럼 추가 완료!
+    # 명세서 NOT NULL 및 기본값 0.00 반영
+    stt_conf: float = Field(default=0.00, ge=0.00, le=1.00) 
 
 class MessageItem(APIModel):
     id: int
@@ -67,10 +68,10 @@ class MessageItem(APIModel):
     speaker: Speaker
     speaker_id: Optional[int] = None
     text: Optional[str] = None
-    emoji: Optional[str] = None
-    file_url: Optional[str] = None
+    emoji: Optional[str] = None       # 명세서 컬럼 ID 일치
+    file_url: Optional[str] = None    # 명세서 컬럼 ID 일치
     stt_conf: float = Field(..., ge=0.00, le=1.00)
-    at: datetime
+    at: datetime                      # 명세서 발화 시각
 
 
 # =========================================================

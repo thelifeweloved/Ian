@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS sess (
 -- -----------------------------------------------------
 -- 6. 메시지 테이블 (msg)
 -- 설명: 상담 중 발생하는 모든 텍스트/시스템 메시지 로그.
+-- 수정사항: 명세서 9p 규격에 맞춰 emoji, file_url 컬럼 추가 완료.
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS msg (
     id          BIGINT NOT NULL AUTO_INCREMENT,
@@ -124,6 +125,8 @@ CREATE TABLE IF NOT EXISTS msg (
     speaker     ENUM('COUNSELOR', 'CLIENT', 'SYSTEM') NOT NULL,
     speaker_id  BIGINT NULL,
     text        TEXT NULL,
+    emoji       TEXT NULL COMMENT '이모지 데이터', -- [추가] 명세서 규격 반영
+    file_url    TEXT NULL COMMENT '파일 업로드 경로', -- [추가] 명세서 규격 반영
     stt_conf    DECIMAL(3,2) NOT NULL DEFAULT 0.00 COMMENT 'STT 신뢰도(0~1)',
     at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
