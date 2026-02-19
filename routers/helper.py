@@ -8,14 +8,14 @@ from typing import Optional, Dict, Any, List
 router = APIRouter(prefix="/helper", tags=["helper"])
 
 # =========================================================
-# Request
+# Request (기존 구조 유지하되 필드명만 명세서 id로 동기화)
 # =========================================================
 class HelperRequest(BaseModel):
-    sess_id: int = Field(..., ge=1)
-    counselor_id: int = Field(..., ge=1)
-    last_client_text: str = ""
-    last_counselor_text: str = ""
-    context: Optional[Dict[str, Any]] = None
+    session_id: int = Field(..., ge=1)       # sess_id에서 명세서 ID인 session_id로 변경 [cite: 225]
+    counselor_id: int = Field(..., ge=1)     # 명세서 counselor.id 참조 [cite: 111]
+    last_client_text: str = ""               # 기존 유지
+    last_counselor_text: str = ""           # 기존 유지
+    context: Optional[Dict[str, Any]] = None # 기존 유지
 
 NEG_KEYS = ["그만", "포기", "싫어", "힘들", "못하겠", "안 할래", "의미없"]
 
@@ -33,7 +33,7 @@ def rule_helper(text: str) -> Dict[str, Any]:
                 "② 구체화: 가장 힘든 부분을 한 가지만 말해주실래요?\n"
                 "③ 안정화: 잠깐 호흡을 같이 맞춰볼까요?"
             ),
-            "risk_hint": "이탈 위험 신호 가능",
+            "risk_hint": "이탈 위험 신호 가능", # 명세서 alert 테이블 연동 포인트 [cite: 359]
         }
 
     if any(k in t for k in ["불안", "걱정"]):
@@ -48,7 +48,7 @@ def rule_helper(text: str) -> Dict[str, Any]:
     return {"mode": "RULE", "suggestion": "공감 → 구체화 질문 → 다음 행동 제안 순서 권장"}
 
 # =========================================================
-# HyperCLOVA X (CLOVA Studio v3 chat-completions, SSE)
+# HyperCLOVA X (기존 SSE 파싱 로직 100% 유지)
 # =========================================================
 def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
@@ -92,26 +92,15 @@ def call_hcx_sse(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             raise RuntimeError(f"HCX HTTP 실패: {r.status_code} {r.text}")
 
         for raw in r.iter_lines(decode_unicode=True):
-            if not raw:
-                continue
-
+            if not raw: continue
             line = raw.strip()
-
-            # ✅ SSE에서 JSON은 보통 data: 로 시작
-            if not line.startswith("data:"):
-                # id: / event: 등은 무시
-                continue
-
+            if not line.startswith("data:"): continue
             data_str = line[len("data:"):].strip()
-
-            # JSON이 아닐 수 있어서 보호
-            if not (data_str.startswith("{") and data_str.endswith("}")):
-                continue
+            if not (data_str.startswith("{") and data_str.endswith("}")): continue
 
             try:
                 obj = json.loads(data_str)
-            except Exception:
-                continue
+            except Exception: continue
 
             msg = obj.get("message") or {}
             content = msg.get("content")
@@ -119,16 +108,12 @@ def call_hcx_sse(messages: List[Dict[str, str]]) -> Dict[str, Any]:
 
             if isinstance(content, str) and content:
                 last_content = content
-
             if finish:
                 last_finish_reason = finish
-
-            # ✅ 최종 result(대개 finishReason="stop")면 확정
             if finish == "stop":
                 final_content = last_content
                 break
 
-    # 혹시 stop이 안 왔으면 마지막 content 사용
     if not final_content:
         final_content = last_content
 
@@ -140,6 +125,7 @@ def call_hcx_sse(messages: List[Dict[str, str]]) -> Dict[str, Any]:
 
 @router.post("/suggestion")
 def helper_suggestion(payload: HelperRequest):
+    # 기존 로직: 룰 기반 우선 체크
     base = rule_helper(payload.last_client_text)
 
     use_hcx = _env("USE_HCX", "0") == "1"
