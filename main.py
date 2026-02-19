@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from db import get_db
+# 하이퍼 클로바 X AI 상담 도우미 연결 (routers/helper.py)
 from routers.helper import router as helper_router
 
 load_dotenv()
@@ -15,7 +16,7 @@ app = FastAPI(title="Mindway Post-Analysis API", version="1.0.2")
 app.include_router(helper_router)
 
 # =========================================================
-# Request Model (명세서 9p 규격 100% 반영)
+# 1. Request Model (명세서 9p 규격 100% 반영)
 # =========================================================
 class MessageCreate(BaseModel):
     sess_id: int = Field(..., ge=1)
@@ -27,7 +28,7 @@ class MessageCreate(BaseModel):
     stt_conf: float = Field(0.0, ge=0.0, le=1.0)
 
 # =========================================================
-# Logic: 이탈 징후 탐지 및 조치 추천
+# 2. Logic: 이탈 징후 탐지 (기존 키워드 로직 보존)
 # =========================================================
 def detect_dropout_signal(message: Optional[str]) -> Optional[Dict[str, Any]]:
     if not message:
@@ -37,7 +38,6 @@ def detect_dropout_signal(message: Optional[str]) -> Optional[Dict[str, Any]]:
     rules = []
     action = ""
 
-    # 이탈 징후 키워드 분석
     if any(kw in msg for kw in ["그만", "힘들", "포기", "싫어"]):
         score += 0.5
         rules.append("NEG_KEYWORD")
@@ -49,42 +49,57 @@ def detect_dropout_signal(message: Optional[str]) -> Optional[Dict[str, Any]]:
             "status": "DETECTED",
             "score": round(min(score, 1.0), 2),
             "rule": "|".join(rules)[:50],
-            "action": action  # [보완] 명세서의 action 컬럼 데이터 추가
+            "action": action  # 명세서 alert.action 컬럼 대응
         }
     return None
 
 # =========================================================
-# Messages (Write) - DB 동기화 완료
+# 3. Helpers
 # =========================================================
+def _rows(db: Session, sql: str, params: Dict[str, Any]):
+    return db.execute(text(sql), params).mappings().all()
+
+# =========================================================
+# 4. Health Check (404 에러 해결 포인트)
+# =========================================================
+@app.get("/health/db")
+def health_db(db: Session = Depends(get_db)):
+    """SMHRD 서버(3307)와의 연결 상태를 확인합니다."""
+    try:
+        v = db.execute(text("SELECT 1")).scalar()
+        return {"db": "ok", "ping": v}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB Connection Error: {str(e)}")
+
+# =========================================================
+# 5. Core APIs (Sessions & Messages)
+# =========================================================
+@app.get("/sessions")
+def list_sessions(limit: int = Query(50, ge=1, le=200), db: Session = Depends(get_db)):
+    sql = "SELECT * FROM sess ORDER BY id DESC LIMIT :l"
+    result = db.execute(text(sql), {"l": limit}).mappings().all()
+    return {"items": jsonable_encoder(result), "count": len(result)}
+
 @app.post("/messages")
 def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
     try:
-        # 1. 세션 존재 체크
-        sess_exists = db.execute(
-            text("SELECT 1 FROM sess WHERE id = :sid"),
-            {"sid": payload.sess_id},
-        ).scalar()
+        # 세션 체크
+        sess_exists = db.execute(text("SELECT 1 FROM sess WHERE id = :sid"), {"sid": payload.sess_id}).scalar()
         if not sess_exists:
             raise HTTPException(status_code=404, detail="sess_id not found")
 
-        # 2. 메시지 저장 (emoji, file_url 포함)
+        # 메시지 저장 (emoji, file_url 포함)
         res = db.execute(text("""
             INSERT INTO msg (sess_id, speaker, speaker_id, text, emoji, file_url, stt_conf, at)
             VALUES (:sid, :speaker, :speaker_id, :text, :emoji, :file_url, :stt_conf, NOW())
         """), {
-            "sid": payload.sess_id,
-            "speaker": payload.speaker,
-            "speaker_id": payload.speaker_id,
-            "text": payload.text,
-            "emoji": payload.emoji,
-            "file_url": payload.file_url,
-            "stt_conf": payload.stt_conf
+            "sid": payload.sess_id, "speaker": payload.speaker, "speaker_id": payload.speaker_id,
+            "text": payload.text, "emoji": payload.emoji, "file_url": payload.file_url, "stt_conf": payload.stt_conf
         })
 
         msg_id = res.lastrowid
         detection = None
 
-        # 3. 내담자 발화 시 이탈 징후 분석 및 Alert 저장
         if payload.speaker == "CLIENT":
             detection = detect_dropout_signal(payload.text)
             if detection:
@@ -92,243 +107,86 @@ def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
                     INSERT INTO alert (sess_id, msg_id, type, status, score, rule, action, at)
                     VALUES (:sid, :mid, :type, :status, :score, :rule, :action, NOW())
                 """), {
-                    "sid": payload.sess_id,
-                    "mid": msg_id,
-                    "type": detection["type"],
-                    "status": detection["status"],
-                    "score": detection["score"],
-                    "rule": detection["rule"],
-                    "action": detection["action"]
+                    "sid": payload.sess_id, "mid": msg_id, "type": detection["type"],
+                    "status": detection["status"], "score": detection["score"],
+                    "rule": detection["rule"], "action": detection["action"]
                 })
 
         db.commit()
         return {"status": "saved", "msg_id": msg_id, "detection": detection}
-
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-# =========================================================
-# Messages (Read) - 명세서 기반 SELECT
-# =========================================================
-@app.get("/sessions/{sess_id}/messages")
-def session_messages(sess_id: int, limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db)):
-    sql = f"""
-        SELECT 
-            id, sess_id, speaker, speaker_id, text, emoji, file_url, stt_conf, at
-        FROM msg
-        WHERE sess_id = :sid
-        ORDER BY at DESC
-        LIMIT {int(limit)}
-    """
-    result = db.execute(text(sql), {"sid": sess_id}).mappings().all()
-    return {"items": jsonable_encoder(list(result))}
-
-
-# =========================================================
-# Streamlit 필수 API 3개
-# - /sessions/{id}/dashboard
-# - /sessions/{id}/messages
-# - /sessions/{id}/alerts
-# =========================================================
 @app.get("/sessions/{sess_id}/dashboard")
 def session_dashboard(sess_id: int, db: Session = Depends(get_db)):
-    sess = db.execute(text("""
-        SELECT
-            id, uuid, counselor_id, client_id, appt_id,
-            channel, progress, start_at, end_at, end_reason,
-            sat, sat_note, ok_text, ok_voice, ok_face, created_at
-        FROM sess
-        WHERE id = :sid
-    """), {"sid": sess_id}).mappings().first()
-
-    if not sess:
-        raise HTTPException(status_code=404, detail="sess_id not found")
-
-    risk_score = db.execute(text("""
-        SELECT COALESCE(AVG(score), 0)
-        FROM alert
-        WHERE sess_id = :sid
-    """), {"sid": sess_id}).scalar()
-
-    return {
-        "session": jsonable_encoder(sess),
-        "risk_score": float(risk_score or 0.0)
-    }
-
+    sess = db.execute(text("SELECT * FROM sess WHERE id = :sid"), {"sid": sess_id}).mappings().first()
+    if not sess: raise HTTPException(status_code=404, detail="sess_id not found")
+    risk_score = db.execute(text("SELECT COALESCE(AVG(score), 0) FROM alert WHERE sess_id = :sid"), {"sid": sess_id}).scalar()
+    return {"session": jsonable_encoder(sess), "risk_score": float(risk_score or 0.0)}
 
 @app.get("/sessions/{sess_id}/messages")
-def session_messages(
-    sess_id: int,
-    limit: int = Query(200, ge=1, le=500),
-    db: Session = Depends(get_db),
-):
-    sql = f"""
-        SELECT
-            id, sess_id, speaker, speaker_id, text, emoji, file_url, stt_conf, at
-        FROM msg
-        WHERE sess_id = :sid
-        ORDER BY at DESC
-        LIMIT {int(limit)}
-    """
-    result = db.execute(text(sql), {"sid": sess_id}).mappings().all()
+def session_messages(sess_id: int, limit: int = Query(200, ge=1), db: Session = Depends(get_db)):
+    sql = "SELECT id, sess_id, speaker, speaker_id, text, emoji, file_url, stt_conf, at FROM msg WHERE sess_id = :sid ORDER BY at DESC LIMIT :l"
+    result = db.execute(text(sql), {"sid": sess_id, "l": limit}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
-
 
 @app.get("/sessions/{sess_id}/alerts")
 def session_alerts(sess_id: int, db: Session = Depends(get_db)):
-    result = db.execute(text("""
-        SELECT
-            id, sess_id, msg_id, type, status, score, rule, action, at
-        FROM alert
-        WHERE sess_id = :sid
-        ORDER BY at DESC
-        LIMIT 200
-    """), {"sid": sess_id}).mappings().all()
+    result = db.execute(text("SELECT * FROM alert WHERE sess_id = :sid ORDER BY at DESC LIMIT 200"), {"sid": sess_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
 
-
-# =========================================================
-# Appointments (예약 리스트 - 추가된 부분)
-# =========================================================
 @app.get("/appointments")
 def get_appointments(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    """
-    테이블 명세서 기반: appt(예약)와 client(내담자) 테이블을 Join하여 
-    오늘 이후의 예약 리스트와 내담자 등급(status)을 함께 반환합니다.
-    """
-    sql = """
-        SELECT 
-            a.id, 
-            c.name AS client_name, 
-            a.at, 
-            a.status, 
-            c.status AS client_grade
-        FROM appt a
-        JOIN client c ON a.client_id = c.id
-        WHERE a.counselor_id = :cid
-        ORDER BY a.at ASC
-    """
+    sql = "SELECT a.id, c.name AS client_name, a.at, a.status, c.status AS client_grade FROM appt a JOIN client c ON a.client_id = c.id WHERE a.counselor_id = :cid ORDER BY a.at ASC"
     result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
 
-
 # =========================================================
-# Dashboard Support APIs (Streamlit이 호출하는 통계들)
+# 6. Stats APIs (통계 로직 보존)
 # =========================================================
 @app.get("/stats/topic-dropout")
 def topic_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    """
-    교정 내용: 기존 channel 기준에서 -> 명세서의 topic(주제)별 이탈률로 수정
-    """
     sql = """
-        SELECT 
-            t.name AS topic_name,
-            COUNT(s.id) AS total,
-            (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(s.id), 0)) * 100 AS dropout_rate
-        FROM topic t
-        JOIN sess_analysis sa ON t.id = sa.topic_id
-        JOIN sess s ON sa.sess_id = s.id
-        WHERE s.counselor_id = :cid
-        GROUP BY t.id
-        ORDER BY dropout_rate DESC
+        SELECT t.name AS topic_name, COUNT(s.id) AS total,
+               (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(s.id), 0)) * 100 AS dropout_rate
+        FROM topic t JOIN sess_analysis sa ON t.id = sa.topic_id JOIN sess s ON sa.sess_id = s.id
+        WHERE s.counselor_id = :cid GROUP BY t.id ORDER BY dropout_rate DESC
     """
     result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
 
 @app.get("/stats/quality-trend")
 def quality_trend(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    """
-    추가 내용: 대시보드 Tab 3에서 사용하는 세션 품질 점수 추이 API
-    """
-    sql = """
-        SELECT 
-            DATE_FORMAT(s.start_at, '%m-%d') AS date,
-            AVG(q.score) AS avg_quality
-        FROM quality q
-        JOIN sess s ON q.sess_id = s.id
-        WHERE s.counselor_id = :cid
-        GROUP BY DATE_FORMAT(s.start_at, '%Y-%m-%d')
-        ORDER BY date ASC
-    """
+    sql = "SELECT DATE_FORMAT(s.start_at, '%m-%d') AS date, AVG(q.score) AS avg_quality FROM quality q JOIN sess s ON q.sess_id = s.id WHERE s.counselor_id = :cid GROUP BY date ORDER BY date ASC"
     result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
 
-
 @app.get("/stats/client-grade-dropout")
 def client_grade_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    result = _rows(db, """
-        SELECT
-            c.status AS client_grade,
-            COUNT(*) AS total
-        FROM client c
-        JOIN sess s ON s.client_id = c.id
-        WHERE s.counselor_id = :cid
-        GROUP BY c.status
-        ORDER BY total DESC
-    """, {"cid": counselor_id})
-    return {"items": jsonable_encoder(result)}
-
+    sql = "SELECT c.status AS client_grade, COUNT(*) AS total FROM client c JOIN sess s ON s.client_id = c.id WHERE s.counselor_id = :cid GROUP BY c.status ORDER BY total DESC"
+    return {"items": jsonable_encoder(list(db.execute(text(sql), {"cid": counselor_id}).mappings().all()))}
 
 @app.get("/stats/missed-alerts")
 def stats_missed_alerts(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    result = db.execute(text("""
-        SELECT
-            s.id AS sess_id,
-            s.uuid,
-            s.start_at,
-            s.end_at,
-            TIMESTAMPDIFF(MINUTE, s.start_at, s.end_at) AS duration_min
-        FROM sess s
-        WHERE s.counselor_id = :cid
-          AND s.end_reason = 'DROPOUT'
-          AND (SELECT COUNT(*) FROM alert a WHERE a.sess_id = s.id) = 0
-        ORDER BY s.start_at DESC
-        LIMIT 200
-    """), {"cid": counselor_id}).mappings().all()
+    sql = "SELECT s.id AS sess_id, s.uuid, s.start_at, s.end_at, TIMESTAMPDIFF(MINUTE, s.start_at, s.end_at) AS duration_min FROM sess s WHERE s.counselor_id = :cid AND s.end_reason = 'DROPOUT' AND (SELECT COUNT(*) FROM alert a WHERE a.sess_id = s.id) = 0 ORDER BY s.start_at DESC LIMIT 200"
+    result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
-
 
 @app.get("/stats/time-dropout")
 def stats_time_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    result = db.execute(text("""
-        SELECT
-            HOUR(s.start_at) AS hour,
-            COUNT(*) AS total,
-            (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate
-        FROM sess s
-        WHERE s.counselor_id = :cid
-        GROUP BY HOUR(s.start_at)
-        ORDER BY hour ASC
-    """), {"cid": counselor_id}).mappings().all()
+    sql = "SELECT HOUR(s.start_at) AS hour, COUNT(*) AS total, (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate FROM sess s WHERE s.counselor_id = :cid GROUP BY hour ORDER BY hour ASC"
+    result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
-
 
 @app.get("/stats/channel-dropout")
 def stats_channel_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    result = db.execute(text("""
-        SELECT
-            s.channel AS channel,
-            COUNT(*) AS total,
-            (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate
-        FROM sess s
-        WHERE s.counselor_id = :cid
-        GROUP BY s.channel
-        ORDER BY dropout_rate DESC
-    """), {"cid": counselor_id}).mappings().all()
+    sql = "SELECT s.channel AS channel, COUNT(*) AS total, (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate FROM sess s WHERE s.counselor_id = :cid GROUP BY s.channel ORDER BY dropout_rate DESC"
+    result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
-
 
 @app.get("/stats/monthly-growth")
 def stats_monthly_growth(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    result = db.execute(text("""
-        SELECT
-            DATE_FORMAT(s.start_at, '%Y-%m') AS month,
-            COUNT(*) AS total,
-            (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate
-        FROM sess s
-        WHERE s.counselor_id = :cid
-        GROUP BY DATE_FORMAT(s.start_at, '%Y-%m')
-        ORDER BY month ASC
-    """), {"cid": counselor_id}).mappings().all()
+    sql = "SELECT DATE_FORMAT(s.start_at, '%Y-%m') AS month, COUNT(*) AS total, (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate FROM sess s WHERE s.counselor_id = :cid GROUP BY month ORDER BY month ASC"
+    result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
