@@ -147,18 +147,44 @@ def get_appointments(counselor_id: int = Query(..., ge=1), db: Session = Depends
 # =========================================================
 @app.get("/stats/topic-dropout")
 def topic_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
+    """
+    주제별 이탈 분석 (가이드라인 제공 목적)
+    """
+    # 명세서 기반으로 sess_analysis와 topic 테이블 조인 유지
     sql = """
-        SELECT t.name AS topic_name, COUNT(s.id) AS total,
-               (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(s.id), 0)) * 100 AS dropout_rate
-        FROM topic t JOIN sess_analysis sa ON t.id = sa.topic_id JOIN sess s ON sa.sess_id = s.id
-        WHERE s.counselor_id = :cid GROUP BY t.id ORDER BY dropout_rate DESC
+        SELECT 
+            t.name AS topic_name, 
+            COUNT(s.id) AS total,
+            (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(s.id), 0)) * 100 AS dropout_rate,
+            AVG(s.sat) * 100 AS avg_sat_rate
+        FROM topic t 
+        JOIN sess_analysis sa ON t.id = sa.topic_id 
+        JOIN sess s ON sa.sess_id = s.id
+        WHERE s.counselor_id = :cid 
+        GROUP BY t.id 
+        ORDER BY dropout_rate DESC
     """
     result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
-
 @app.get("/stats/quality-trend")
 def quality_trend(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    sql = "SELECT DATE_FORMAT(s.start_at, '%m-%d') AS date, AVG(q.score) AS avg_quality FROM quality q JOIN sess s ON q.sess_id = s.id WHERE s.counselor_id = :cid GROUP BY date ORDER BY date ASC"
+    """
+    세션 품질 및 만족도(sat) 추이 분석
+    - sess.sat(1:만족, 0:불만족) 데이터와 일자별 Risk Score 평균을 결합
+    """
+    # 2.14 명세서의 sess.sat 컬럼과 alert.score를 결합하여 분석
+    sql = """
+        SELECT 
+            DATE_FORMAT(s.start_at, '%m-%d') AS date, 
+            AVG(s.sat) * 100 AS avg_sat_rate,  -- 만족도 백분율
+            (SELECT AVG(score) FROM alert WHERE sess_id IN 
+                (SELECT id FROM sess WHERE DATE(start_at) = DATE(s.start_at) AND counselor_id = :cid)
+            ) AS avg_risk_score
+        FROM sess s
+        WHERE s.counselor_id = :cid
+        GROUP BY date
+        ORDER BY date ASC
+    """
     result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
 
@@ -181,10 +207,22 @@ def stats_time_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depen
 
 @app.get("/stats/channel-dropout")
 def stats_channel_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    sql = "SELECT s.channel AS channel, COUNT(*) AS total, (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate FROM sess s WHERE s.counselor_id = :cid GROUP BY s.channel ORDER BY dropout_rate DESC"
+    """
+    채널별(CHAT/VOICE) 이탈률 및 평균 만족도 분석
+    """
+    sql = """
+        SELECT 
+            s.channel AS channel, 
+            COUNT(*) AS total, 
+            (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate,
+            AVG(s.sat) * 100 AS avg_sat_rate
+        FROM sess s 
+        WHERE s.counselor_id = :cid 
+        GROUP BY s.channel 
+        ORDER BY dropout_rate DESC
+    """
     result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
-
 @app.get("/stats/monthly-growth")
 def stats_monthly_growth(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
     sql = "SELECT DATE_FORMAT(s.start_at, '%Y-%m') AS month, COUNT(*) AS total, (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate FROM sess s WHERE s.counselor_id = :cid GROUP BY month ORDER BY month ASC"

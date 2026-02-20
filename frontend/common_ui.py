@@ -1,17 +1,14 @@
 # frontend/common_ui.py
-import os
-import time
-import requests
-import streamlit as st
-from typing import Any, Dict, Optional
 
 # =========================================================
 # API Base
 # - 환경변수 FRONTEND_API_URL 우선
-# - 없으면 로컬 FastAPI
+# - SMHRD 외부 서버 주소로 기본값 변경
 # =========================================================
 def get_api_base() -> str:
-    return os.getenv("FRONTEND_API_URL", "http://127.0.0.1:8000").rstrip("/")
+    # 기본값을 로컬이 아닌 팀장님의 서버 주소로 변경하여 배포 편의성을 높입니다.
+    default_url = "http://project-db-campus.smhrd.com:8000" 
+    return os.getenv("FRONTEND_API_URL", default_url).rstrip("/")
 
 
 # =========================================================

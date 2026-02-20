@@ -1,11 +1,12 @@
 import streamlit as st
 import requests
-from common_ui import api_health_check_or_stop
+# [수정] common_ui에서 정의한 헬퍼 함수들을 가져오게
+from common_ui import get_api_base, api_health_check_or_stop
 
 # 테이블 명세서 기반 MindWay 프로젝트 메인 랜딩 설정
 st.set_page_config(
     page_title="MindWay",
-    page_icon=None,   # 이모지 제거: 실무형/분석 시스템 지향
+    page_icon=None,  
     layout="wide"
 )
 
@@ -86,15 +87,20 @@ html, body, [class*="css"]  {
 """, unsafe_allow_html=True)
 
 # -------------------------
-# 📡 API/DB Health Check (Table Driven)
+# 📡 API/DB Health Check (수정 포인트)
 # -------------------------
-# 명세서와 스냅샷에 정의된 DB 연결 상태 확인 API 호출
+# [수정] 하드코딩된 127.0.0.1 대신 common_ui의 get_api_base()를 활용합니다.
 try:
-    # db.py의 SessionLocal 연결 상태를 확인하는 엔드포인트
-    r = requests.get("http://127.0.0.1:8000/health/db", timeout=2)
-    if r.ok and r.json().get("db") == "ok":
-        st.markdown('<div class="footer">● API & Database (counseling_db) Connected</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="footer" style="color:#ef4444;">● Database Connection Error</div>', unsafe_allow_html=True)
+    # 헬스체크를 수행하고 결과를 가져옵니다.
+    health_data = api_health_check_or_stop(show_success=False)
+    
+    # 멘토님 요청 반영: 시스템 접속 정보를 푸터에 명시하여 기술적 구체성 확보
+    api_host = get_api_base()
+    db_status = "Connected" if health_data.get("db") == "ok" else "Error"
+    
+    st.markdown(
+        f'<div class="footer">● API Host: {api_host} | ● Database: mindway (Port 3307) {db_status}</div>', 
+        unsafe_allow_html=True
+    )
 except Exception:
-    st.markdown('<div class="footer" style="color:#ef4444;">● API Server Disconnected</div>', unsafe_allow_html=True)
+    st.markdown('<div class="footer" style="color:#ef4444;">● API Server Disconnected (Check .env or Server Status)</div>', unsafe_allow_html=True)

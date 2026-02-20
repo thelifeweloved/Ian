@@ -26,6 +26,17 @@ MindWay 프로젝트 공통 개발 환경 저장소입니다.
 docker --version
 python --version
 git --version
+
+🛠️ 환경 설정 (중요: 외부 서버 연동)
+팀원 전체가 동일한 데이터를 바라보기 위해 SMHRD 외부 DB 서버 설정을 우선합니다.
+
+프로젝트 루트의 .env.example 파일을 복사하여 .env 파일을 생성합니다.
+
+🛠️ 데이터 확인 및 입력
+Schema: schema_final_perfect.sql을 기준으로 합니다.
+
+Seed 데이터: 통계 분석 및 Action 0-4-5 단계 시연을 위해 seed.sql 입력을 권장합니다.
+
 ✅ 2. DB 실행 (최초 / 공통)
 프로젝트 루트에서 실행:
 
@@ -34,6 +45,8 @@ docker-compose up -d
 
 docker ps
 MySQL 컨테이너가 Up 상태면 성공.
+
+(로컬 테스트가 필요한 경우에만 docker-compose up -d를 실행합니다.)
 
 ✅ 3. DB 접속 확인 (선택)
 컨테이너 이름 확인 후:
@@ -44,6 +57,13 @@ DB 확인:
 SHOW DATABASES;
 USE mindway;
 SHOW TABLES;
+
+우리 프로젝트는 분산 서버 환경을 지향합니다.
+
+- Database: SMHRD 외부 서버 (Port: 3307)
+- Backend: 각 팀원 로컬에서 실행 (Port: 8000)
+- Frontend: 각 팀원 로컬에서 실행 (Port: 8501)
+
 ✅ 4. seed 데이터 입력 (권장)
 시연 / 테스트 / 통계 확인용:
 
@@ -73,6 +93,7 @@ uvicorn main:app --reload
 Swagger Docs → http://127.0.0.1:8000/docs
 
 DB Health Check → http://127.0.0.1:8000/health/db
+
 
 ✅ 6. Streamlit 대시보드 실행
 새 터미널에서 실행:
@@ -128,50 +149,44 @@ Streamlit 접속
 Risk Score / 사후 분석 표 확인
 
 ✅ 9. 자주 발생하는 문제 해결
-❌ API 오류 / 404 발생
-원인:
+❌ API 오류 / 404 Not Found 발생
+원인: 루트 폴더(ThinkBIG_main)에서 실행 시 하위 폴더 경로를 누락했거나 엔드포인트가 정의되지 않음
 
-FastAPI에 해당 엔드포인트가 없음
+해결 1 (실행 위치: ThinkBIG_main 기준):
 
-uvicorn 실행 위치 불일치
+FastAPI 실행: uvicorn counseling_project.main:app --reload
 
-해결:
+Streamlit 실행: streamlit run counseling_project/frontend/app_ui.py
 
-Swagger 확인:
+해결 2 (경로 확인):
 
-http://127.0.0.1:8000/docs
+Swagger Docs: http://127.0.0.1:8000/docs 접속 후 API 목록 확인
 
-실행 위치 확인:
+DB Health: http://127.0.0.1:8000/health/db 호출 시 404가 뜨면 main.py 내 해당 경로 정의 확인
 
-루트 main.py:
+❌ DB 연결 실패 (Connection Error)
+원인: SMHRD 외부 서버 포트(3307) 미설정 또는 도커 컨테이너 미작동
 
-uvicorn main:app --reload
-backend 폴더 구조:
-
-uvicorn backend.main:app --reload
-❌ DB 연결 실패
 확인 순서:
 
-Docker 컨테이너 상태 확인:
+컨테이너 상태: docker ps 명령어로 MySQL 컨테이너가 Up 상태인지 확인 (로컬 DB 사용 시)
 
-docker ps
-.env DB 설정 확인
+환경 변수: .env 파일의 DB_PORT가 3307로 설정되어 있는지 확인 (외부 서버 접속 필수)
 
-/health/db 호출 확인
+접속 테스트: /health/db 호출 시 응답에 "db": "ok"가 뜨는지 확인
 
-❌ 대시보드 표가 비어 있음
-원인:
-
-seed 데이터 없음
-
-sess 테이블 데이터 없음
+❌ 대시보드 표가 비어 있음 (No Data)
+원인: sess 테이블 데이터 부재 또는 초기화 스크립트 미실행
 
 해결:
 
-mysql < seed.sql
+데이터 주입: mysql -u [USER] -p mindway < seed.sql (루트 폴더에 파일이 있으므로 counseling_project/ 경로를 뺍니다.)
+
+세션 생성: streamlit run counseling_project/frontend/pages/01_client_chat_ui.py 실행 후 테스트 대화 입력
+
 ✅ 10. Git 기본 작업
 git add .
-git commit -m "update"
+git commit -m "update" ("" 내용은 본인이 수정한 내용 이름 붙여서 상세 기재)
 git push origin main
 LF / CRLF 경고는 대부분 무시 가능.
 
