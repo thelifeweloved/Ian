@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MindWay - Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Pretendard', sans-serif; }
+    body { display: flex; background-color: #f8f9fa; height: 100vh; overflow: hidden; }
+
+    .sidebar { width: 280px; background-color: #373f50; color: white; display: flex; flex-direction: column; padding: 40px 20px; flex-shrink: 0; }
+    .brand-name { font-size: 2.2rem; font-weight: 700; margin-bottom: 35px; padding-left: 10px; }
+    .user-profile { margin-bottom: 40px; padding-left: 10px; }
+    .user-name { font-size: 1.1rem; font-weight: 500; margin-bottom: 4px; }
+    .user-email { font-size: 0.9rem; opacity: 0.6; }
+    .nav-menu { list-style: none; flex-grow: 1; }
+    .nav-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; color: rgba(255,255,255,0.7); text-decoration: none; }
+    .nav-item.active { background-color: rgba(255,255,255,0.1); color: white; }
+    .logout-btn { margin-top: auto; color: #ff9a9a; display: flex; align-items: center; padding: 15px; text-decoration: none; font-weight: 500; }
+
+    .main-content { flex-grow: 1; padding: 40px; overflow-y: auto; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+
+    .card { background: white; padding: 22px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.03); }
+    .section-title { font-size: 1.1rem; font-weight: 600; color: #333; margin-bottom: 16px; }
+
+    .kpi-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-bottom: 22px; }
+    .kpi-card { border-left: 5px solid #ddd; }
+    .kpi-card.blue { border-left-color: #7389f4; }
+    .kpi-card.red { border-left-color: #e74c3c; }
+    .kpi-card.green { border-left-color: #2ecc71; }
+    .kpi-card.orange { border-left-color: #f39c12; }
+    .kpi-card h4 { font-size: 0.85rem; color: #888; margin-bottom: 8px; }
+    .kpi-card .value { font-size: 1.4rem; font-weight: 800; color: #333; }
+
+    .dashboard-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; }
+    .grid-span-2 { grid-column: span 2; }
+
+    .appt-table, .simple-table { width: 100%; border-collapse: collapse; font-size: 0.93rem; table-layout: fixed; }
+    .appt-table th, .appt-table td,
+    .simple-table th, .simple-table td { text-align: center; padding: 12px 10px; border-bottom: 1px solid #eee; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .status-badge { padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 800; display: inline-block; }
+    .status-confirmed { background: #eef2ff; color: #7389f4; }
+    .status-cancel { background: #ffefef; color: #e74c3c; }
+    .status-done { background: #eafff3; color: #2ecc71; }
+
+    .pill { padding: 6px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 900; display: inline-block; }
+    .pill-low { background:#eafff3; color:#2ecc71; }
+    .pill-mid { background:#fff7e6; color:#f39c12; }
+    .pill-high { background:#ffefef; color:#e74c3c; }
+
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .row > * { flex: 0 0 auto; }
+
+    .select {
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: white;
+      min-width: 240px;
+      font-size: 0.95rem;
+    }
+
+    .btn {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      background: #373f50;
+      color: white;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .btn.secondary { background: white; color: #373f50; }
+    .muted { color:#6b7280; font-size:0.9rem; }
+
+    .split-2 { display:grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .scrollbox { max-height: 320px; overflow:auto; border: 1px solid #f0f0f0; border-radius: 12px; }
+    .small { font-size: 0.85rem; }
+    .hr { height: 1px; background:#f0f0f0; margin: 14px 0; }
+  </style>
+</head>
+
+<body>
+  <aside class="sidebar">
+    <div class="brand-name">MindWay</div>
+    <div class="user-profile">
+      <div class="user-name" id="counselorNameDisplay">로드 중...</div>
+      <div class="user-email" id="counselorEmailDisplay">-</div>
+    </div>
+    <nav class="nav-menu">
+      <a href="dashboard.html" class="nav-item active">
+        <span><i class="fa-solid fa-house"></i> Dashboard</span>
+      </a>
+      <a href="Session.html" class="nav-item">
+        <span><i class="fa-regular fa-user"></i> Session Report</span>
+      </a>
+    </nav>
+    <a href="Login.html" class="logout-btn" onclick="localStorage.clear();">
+      <i class="fa-solid fa-arrow-right-from-bracket"></i> &nbsp; Logout Account
+    </a>
+  </aside>
+
+  <main class="main-content">
+    <header class="header">
+      <h2 id="welcomeHeader" style="font-size: 2rem;">Dashboard</h2>
+      <div class="row">
+        <span class="muted small">API:</span>
+        <select id="apiMode" class="select" style="min-width:260px;">
+          <option value="campus">캠퍼스 서버 (project-db-campus.smhrd.com)</option>
+          <option value="local">로컬 (127.0.0.1)</option>
+        </select>
+        <button class="btn secondary" id="btnReload">새로고침</button>
+      </div>
+    </header>
+
+    <div class="kpi-container">
+      <div class="card kpi-card green">
+        <h4>오늘 예약자 수</h4>
+        <div class="value" id="todayApptCount">0명</div>
+      </div>
+      <div class="card kpi-card blue">
+        <h4>평균 상담 만족도 (SAT)</h4>
+        <div class="value" id="avgSatRate">0%</div>
+      </div>
+      <div class="card kpi-card red">
+        <h4>평균 이탈 신호 강도</h4>
+        <div class="value" id="currentSignalScore">0.00</div>
+      </div>
+      <div class="card kpi-card orange">
+        <h4>세션 수 (최근 50)</h4>
+        <div class="value" id="sessionCount">0</div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="card grid-span-2">
+        <div class="section-title">오늘 예정된 상담예약 (appt)</div>
+        <div class="muted small" id="apptHint">예약 정보 로딩 중...</div>
+        <div class="hr"></div>
+        <table class="appt-table">
+          <thead>
+            <tr>
+              <th style="width: 20%;">내담자명</th>
+              <th style="width: 30%;">예약시간</th>
+              <th style="width: 25%;">고객등급</th>
+              <th style="width: 25%;">예약상태</th>
+            </tr>
+          </thead>
+          <tbody id="apptTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="section-title">세션 목록 (sess) & 선택</div>
+        <div class="row">
+          <select id="sessionSelect" class="select"></select>
+          <button class="btn" id="btnLoadSession">세션 불러오기</button>
+        </div>
+        <div class="hr"></div>
+        <div class="scrollbox">
+          <table class="simple-table">
+            <thead>
+              <tr>
+                <th style="width:14%;">sess_id</th>
+                <th style="width:28%;">start_at</th>
+                <th style="width:18%;">channel</th>
+                <th style="width:20%;">end_reason</th>
+                <th style="width:20%;">sat</th>
+              </tr>
+            </thead>
+            <tbody id="sessionTableBody"></tbody>
+          </table>
+        </div>
+        <div class="muted small" style="margin-top:10px;">
+          * 상담사 스코프(counselor_id)로 세션을 조회합니다.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">선택 세션 요약 (dashboard)</div>
+
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="muted small">선택 sess_id</div>
+            <div style="font-size:1.4rem; font-weight:900;" id="selSessId">-</div>
+          </div>
+          <div id="signalPillWrap"></div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="split-2">
+          <div>
+            <div class="muted small">이탈 신호 강도 (alert.avg)</div>
+            <div style="font-size:1.25rem; font-weight:900;" id="selSignalScore">0.00</div>
+          </div>
+          <div>
+            <div class="muted small">이탈 신호 건수</div>
+            <div style="font-size:1.25rem; font-weight:900;" id="selAlertCount">0</div>
+          </div>
+          <div>
+            <div class="muted small">Quality Flow</div>
+            <div style="font-size:1.25rem; font-weight:900;" id="selQFlow">-</div>
+          </div>
+          <div>
+            <div class="muted small">Quality Score</div>
+            <div style="font-size:1.25rem; font-weight:900;" id="selQScore">-</div>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="muted small">이탈 신호 타입 분포 (세션)</div>
+        <div class="scrollbox" style="max-height:140px;">
+          <table class="simple-table">
+            <thead>
+              <tr>
+                <th>type</th>
+                <th>cnt</th>
+              </tr>
+            </thead>
+            <tbody id="alertTypeBody"></tbody>
+          </table>
+        </div>
+
+        <div class="muted small" style="margin-top:10px;" id="sessionMetaHint">세션을 선택하면 상세가 표시됩니다.</div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">만족도(%) / 이탈 신호 강도(0~1) 추이 (quality-trend)</div>
+        <canvas id="qualityChart" height="220"></canvas>
+        <div class="muted small" id="trendHint">로딩 중...</div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">최근 이탈 징후 분석 (topic-dropout)</div>
+        <canvas id="churnChart" height="220"></canvas>
+        <div class="muted small" id="churnHint">로딩 중...</div>
+      </div>
+
+      <div class="card grid-span-2">
+        <div class="section-title">세션 로그 (msg) & 이탈 신호 (alert)</div>
+        <div class="muted small">
+          * msg/alert는 선택한 sess_id 기준으로 조회됩니다. (최근 200건)
+        </div>
+        <div class="hr"></div>
+        <div class="split-2">
+          <div>
+            <div class="muted small">대화 로그 (msg)</div>
+            <div class="scrollbox">
+              <table class="simple-table">
+                <thead>
+                  <tr>
+                    <th style="width:18%;">at</th>
+                    <th style="width:14%;">speaker</th>
+                    <th style="width:68%;">text</th>
+                  </tr>
+                </thead>
+                <tbody id="msgBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div class="muted small">이탈 신호 (alert)</div>
+            <div class="scrollbox">
+              <table class="simple-table">
+                <thead>
+                  <tr>
+                    <th style="width:18%;">at</th>
+                    <th style="width:18%;">type</th>
+                    <th style="width:14%;">status</th>
+                    <th style="width:14%;">score</th>
+                    <th style="width:36%;">action</th>
+                  </tr>
+                </thead>
+                <tbody id="alertBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card grid-span-2">
+        <div class="section-title">사후 분석 리포트 (통계 테이블)</div>
+        <div class="muted small">
+          * 발표/시연에서 “근거 화면”으로 쓰기 좋게 표 형태로도 제공합니다.
+        </div>
+        <div class="hr"></div>
+
+        <div class="split-2">
+          <div>
+            <div class="muted small">채널별 이탈 비교 (channel-dropout)</div>
+            <div class="scrollbox" style="max-height:240px;">
+              <table class="simple-table">
+                <thead>
+                  <tr>
+                    <th>channel</th>
+                    <th>total</th>
+                    <th>dropout_rate</th>
+                    <th>avg_sat_rate</th>
+                  </tr>
+                </thead>
+                <tbody id="channelDropoutBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <div class="muted small">탐지 실패 세션 (missed-alerts)</div>
+            <div class="scrollbox" style="max-height:240px;">
+              <table class="simple-table">
+                <thead>
+                  <tr>
+                    <th>sess_id</th>
+                    <th>start_at</th>
+                    <th>duration_min</th>
+                  </tr>
+                </thead>
+                <tbody id="missedBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    // ✅ 1) URL 파라미터가 있으면 그걸 우선 적용 (없으면 localStorage)
+    const sp = new URLSearchParams(location.search);
+    const urlCounselorId = sp.get("counselor_id");
+    const urlCounselorName = sp.get("counselor_name");
+    const urlCounselorEmail = sp.get("counselor_email");
+
+    // ✅ 2) URL에서 온 값이 있으면 localStorage를 "덮어쓰기" (이게 핵심)
+    if (urlCounselorId) localStorage.setItem("counselor_id", urlCounselorId);
+    if (urlCounselorName) localStorage.setItem("counselor_name", urlCounselorName);
+    if (urlCounselorEmail) localStorage.setItem("counselor_email", urlCounselorEmail);
+
+    const counselorId = localStorage.getItem('counselor_id');
+    const counselorName = localStorage.getItem('counselor_name');
+    const counselorEmail = localStorage.getItem('counselor_email') || "counselor@mindway.com";
+
+    if (!counselorId) {
+      alert("로그인이 필요합니다.");
+      location.href = 'Login.html';
+    }
+
+    document.getElementById('counselorNameDisplay').innerText = (counselorName || "상담사") + " 상담사";
+    document.getElementById('counselorEmailDisplay').innerText = counselorEmail;
+    document.getElementById('welcomeHeader').innerText = `안녕하세요, ${(counselorName || "상담사")} 상담사님`;
+
+    const apiModeEl = document.getElementById("apiMode");
+    const btnReload = document.getElementById("btnReload");
+
+    function getApiBase() {
+      const mode = apiModeEl.value;
+      if (mode === "local") return "http://127.0.0.1:8000";
+      return "http://project-db-campus.smhrd.com:8000";
+    }
+
+    async function apiGet(path) {
+      const base = getApiBase();
+      const url = `${base}${path}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${path} HTTP ${r.status}`);
+      return await r.json();
+    }
+
+    function safeText(v, fallback = "-") {
+      if (v === null || v === undefined) return fallback;
+      const s = String(v);
+      return s.length ? s : fallback;
+    }
+
+    function toNumber(v, fallback = 0) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function makeSignalPill(label) {
+      const L = (label || "LOW").toUpperCase();
+      // 내부값은 HIGH/MID/LOW를 써도 UI에서는 ‘위험’ 표현 금지 → ‘이탈 신호 수준’로만 표시
+      if (L === "HIGH") return `<span class="pill pill-high">관리 필요</span>`;
+      if (L === "MID") return `<span class="pill pill-mid">주의</span>`;
+      return `<span class="pill pill-low">안정</span>`;
+    }
+
+    function formatDatetime(v) {
+      if (!v) return "-";
+      return String(v).replace("T", " ");
+    }
+
+    let qualityChart = null;
+    let churnChart = null;
+
+    function renderQualityChart(labels, satData, signalData) {
+      const canvas = document.getElementById("qualityChart");
+      if (!canvas) return;
+
+      const ctx = canvas.getContext("2d");
+      if (qualityChart) qualityChart.destroy();
+
+      qualityChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            { label: "만족도(%)", data: satData, tension: 0.3, fill: false, yAxisID: "ySat" },
+            { label: "이탈 신호 강도(0~1)", data: signalData, tension: 0.3, fill: false, yAxisID: "ySig" }
+          ]
+        },
+        options: {
+          responsive: true,
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            ySat: { beginAtZero: true, max: 100, title: { display: true, text: "만족도(%)" } },
+            ySig: { beginAtZero: true, suggestedMax: 1, position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: "이탈 신호 강도(0~1)" } }
+          }
+        }
+      });
+    }
+
+    function renderChurnChart(labels, dropoutRates) {
+      const canvas = document.getElementById("churnChart");
+      if (!canvas) return;
+
+      const ctx = canvas.getContext("2d");
+      if (churnChart) churnChart.destroy();
+
+      churnChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{ label: "주제별 이탈률(%)", data: dropoutRates }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } } }
+      });
+    }
+
+    async function loadAppointments() {
+      const hint = document.getElementById("apptHint");
+      hint.innerText = "예약 정보 로딩 중...";
+      const result = await apiGet(`/appointments?counselor_id=${counselorId}`);
+      const appts = result.items || [];
+
+      document.getElementById("todayApptCount").innerText = `${appts.length}명`;
+
+      const tbody = document.getElementById("apptTableBody");
+      tbody.innerHTML = appts.map(a => {
+        const status = safeText(a.status);
+        const badgeClass =
+          status.includes("CANCEL") ? "status-cancel" :
+          status.includes("DONE") ? "status-done" :
+          "status-confirmed";
+
+        return `
+          <tr>
+            <td><strong>${safeText(a.client_name)}</strong></td>
+            <td>${formatDatetime(a.at)}</td>
+            <td>${safeText(a.client_grade)}</td>
+            <td><span class="status-badge ${badgeClass}">${status}</span></td>
+          </tr>
+        `;
+      }).join("");
+
+      hint.innerText = appts.length ? "오늘 예약 리스트입니다." : "오늘 배정된 예약이 없습니다.";
+    }
+
+    async function loadTrend() {
+      const hint = document.getElementById("trendHint");
+      hint.innerText = "추이 데이터 로딩 중...";
+      const result = await apiGet(`/stats/quality-trend?counselor_id=${counselorId}`);
+      const data = result.items || [];
+
+      if (!data.length) {
+        hint.innerText = "표시할 데이터가 부족합니다.";
+        document.getElementById("avgSatRate").innerText = "0%";
+        document.getElementById("currentSignalScore").innerText = "0.00";
+        renderQualityChart([], [], []);
+        return;
+      }
+
+      const labels = data.map(x => safeText(x.date_label, "00-00"));
+      const satScores = data.map(x => toNumber(x.avg_sat_rate, 0));
+      const signalScores = data.map(x => toNumber(x.avg_risk_score, 0)); // API 필드명은 유지, UI 표기만 “이탈 신호 강도”
+
+      const latest = data[data.length - 1];
+      document.getElementById("avgSatRate").innerText = `${toNumber(latest.avg_sat_rate, 0).toFixed(1)}%`;
+      document.getElementById("currentSignalScore").innerText = `${toNumber(latest.avg_risk_score, 0).toFixed(2)}`;
+
+      renderQualityChart(labels, satScores, signalScores);
+      hint.innerText = "날짜별 만족도/이탈 신호 강도 평균입니다.";
+    }
+
+    async function loadTopicDropout() {
+      const hint = document.getElementById("churnHint");
+      hint.innerText = "주제별 이탈 분석 로딩 중...";
+      const result = await apiGet(`/stats/topic-dropout?counselor_id=${counselorId}`);
+      const items = result.items || [];
+
+      if (!items.length) {
+        renderChurnChart([], []);
+        hint.innerText = "표시할 데이터가 부족합니다.";
+        return;
+      }
+
+      const labels = items.map(x => safeText(x.topic_name));
+      const dropoutRates = items.map(x => toNumber(x.dropout_rate, 0));
+
+      renderChurnChart(labels, dropoutRates);
+      hint.innerText = "토픽별 이탈률(%)을 표시합니다.";
+    }
+
+    async function loadSessionsList() {
+      const result = await apiGet(`/sessions?counselor_id=${counselorId}&limit=50`);
+      const sessions = result.items || [];
+
+      document.getElementById("sessionCount").innerText = `${sessions.length}`;
+
+      const sel = document.getElementById("sessionSelect");
+      sel.innerHTML = sessions.map(s => {
+        const label = `#${s.id} | ${safeText(s.start_at)} | ${safeText(s.channel)} | ${safeText(s.end_reason, "-")}`;
+        return `<option value="${s.id}">${label}</option>`;
+      }).join("");
+
+      const body = document.getElementById("sessionTableBody");
+      body.innerHTML = sessions.map(s => `
+        <tr>
+          <td>${safeText(s.id)}</td>
+          <td>${safeText(s.start_at)}</td>
+          <td>${safeText(s.channel)}</td>
+          <td>${safeText(s.end_reason, "-")}</td>
+          <td>${(s.sat === null || s.sat === undefined) ? "-" : safeText(s.sat)}</td>
+        </tr>
+      `).join("");
+
+      if (sessions.length) {
+        await loadSessionDetail(sessions[0].id);
+      } else {
+        document.getElementById("selSessId").innerText = "-";
+      }
+    }
+
+    async function loadSessionDetail(sessId) {
+      document.getElementById("selSessId").innerText = `${sessId}`;
+
+      const dash = await apiGet(`/sessions/${sessId}/dashboard`);
+
+      const signalScore = toNumber(dash.risk_score, 0);   // API는 유지
+      const signalLabel = safeText(dash.risk_label, "LOW"); // API는 유지
+      const quality = dash.quality;
+      const alertSummary = dash.alert_summary || {};
+      const alertTypes = dash.alert_types || [];
+
+      document.getElementById("signalPillWrap").innerHTML = makeSignalPill(signalLabel);
+      document.getElementById("selSignalScore").innerText = signalScore.toFixed(2);
+      document.getElementById("selAlertCount").innerText = `${toNumber(alertSummary.total_alerts, 0)}`;
+
+      if (quality) {
+        document.getElementById("selQFlow").innerText = toNumber(quality.flow, 0).toFixed(2);
+        document.getElementById("selQScore").innerText = toNumber(quality.score, 0).toFixed(2);
+      } else {
+        document.getElementById("selQFlow").innerText = "-";
+        document.getElementById("selQScore").innerText = "-";
+      }
+
+      const typeBody = document.getElementById("alertTypeBody");
+      typeBody.innerHTML = alertTypes.length ? alertTypes.map(t => `
+        <tr>
+          <td>${safeText(t.type)}</td>
+          <td>${toNumber(t.cnt, 0)}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="2" class="muted">데이터 없음</td></tr>`;
+
+      const s = dash.session || {};
+      document.getElementById("sessionMetaHint").innerText =
+        `start_at=${safeText(s.start_at)} | channel=${safeText(s.channel)} | end_reason=${safeText(s.end_reason, "-")}`;
+
+      const msgRes = await apiGet(`/sessions/${sessId}/messages?limit=200`);
+      const msgs = msgRes.items || [];
+      const msgBody = document.getElementById("msgBody");
+      msgBody.innerHTML = msgs.length ? msgs.map(m => `
+        <tr>
+          <td class="small">${safeText(m.at)}</td>
+          <td><strong>${safeText(m.speaker)}</strong></td>
+          <td style="text-align:left; white-space:normal;">${safeText(m.text, "")}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="3" class="muted">대화 기록이 없습니다.</td></tr>`;
+
+      const alertRes = await apiGet(`/sessions/${sessId}/alerts?limit=200`);
+      const alerts = alertRes.items || [];
+      const alertBody = document.getElementById("alertBody");
+      alertBody.innerHTML = alerts.length ? alerts.map(a => `
+        <tr>
+          <td class="small">${safeText(a.at)}</td>
+          <td><strong>${safeText(a.type)}</strong></td>
+          <td>${safeText(a.status)}</td>
+          <td>${toNumber(a.score, 0).toFixed(2)}</td>
+          <td style="text-align:left; white-space:normal;">${safeText(a.action, "")}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="5" class="muted">탐지된 이탈 신호가 없습니다.</td></tr>`;
+    }
+
+    async function loadChannelDropoutTable() {
+      const result = await apiGet(`/stats/channel-dropout?counselor_id=${counselorId}`);
+      const items = result.items || [];
+      const body = document.getElementById("channelDropoutBody");
+
+      body.innerHTML = items.length ? items.map(x => `
+        <tr>
+          <td>${safeText(x.channel)}</td>
+          <td>${toNumber(x.total, 0)}</td>
+          <td>${toNumber(x.dropout_rate, 0).toFixed(1)}%</td>
+          <td>${toNumber(x.avg_sat_rate, 0).toFixed(1)}%</td>
+        </tr>
+      `).join("") : `<tr><td colspan="4" class="muted">데이터 없음</td></tr>`;
+    }
+
+    async function loadMissedAlertsTable() {
+      const result = await apiGet(`/stats/missed-alerts?counselor_id=${counselorId}`);
+      const items = result.items || [];
+      const body = document.getElementById("missedBody");
+
+      body.innerHTML = items.length ? items.map(x => `
+        <tr>
+          <td>${safeText(x.sess_id)}</td>
+          <td>${safeText(x.start_at)}</td>
+          <td>${toNumber(x.duration_min, 0)}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="3" class="muted">데이터 없음</td></tr>`;
+    }
+
+    async function loadAll() {
+      try {
+        await loadAppointments();
+        await loadTrend();
+        await loadTopicDropout();
+        await loadSessionsList();
+        await loadChannelDropoutTable();
+        await loadMissedAlertsTable();
+      } catch (e) {
+        console.error(e);
+        alert("대시보드 로딩 중 오류가 발생했습니다. (콘솔 확인)\n" + e.message);
+      }
+    }
+
+    document.getElementById("btnLoadSession").addEventListener("click", async () => {
+      const sessId = Number(document.getElementById("sessionSelect").value);
+      if (!sessId) return;
+      await loadSessionDetail(sessId);
+    });
+
+    btnReload.addEventListener("click", async () => { await loadAll(); });
+    apiModeEl.addEventListener("change", async () => { await loadAll(); });
+
+    window.onload = loadAll;
+  </script>
+</body>
+
+</html>
