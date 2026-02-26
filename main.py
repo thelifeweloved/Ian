@@ -1,4 +1,5 @@
 import os
+import json
 from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -9,11 +10,12 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import uuid
+import hashlib
 from db import get_db
-# 하이퍼 클로바 X AI 상담 도우미 연결 (routers/helper.py)
 from routers.helper import router as helper_router
+from routers.analysis_services.runner import run_core_features
+from routers.analysis_services.clova_client import ClovaXClient
 
-# 1. 앱 초기화 및 미들웨어 설정
 load_dotenv()
 app = FastAPI(title="Mindway Post-Analysis API", version="1.1.2")
 
@@ -27,24 +29,24 @@ app.add_middleware(
 
 app.include_router(helper_router)
 
-# =========================================================
-# 2. Pydantic Models (400 Bad Request 방지용 필수 수정)
-# =========================================================
+# ---------------------------------------------------------
+# Pydantic Models (명세서 및 프론트엔드 연동 규격 반영)
+# ---------------------------------------------------------
 class LoginRequest(BaseModel):
     email: str
     pwd: str
 
 class ClientLoginRequest(BaseModel):
-    phone: str
-    code: str
+    # 프론트엔드 Login.html 연동을 위해 email, pwd 방식으로 통일
+    email: str
+    pwd: str
 
 class SignupRequest(BaseModel):
     role: str
     name: str
-    # client는 pwd 없음 (명세서 기준)
     email: Optional[str] = None
     phone: Optional[str] = None
-    pwd: Optional[str] = None  # counselor일 때만 사용
+    pwd: Optional[str] = None
 
 class MessageCreate(BaseModel):
     sess_id: int = Field(..., ge=1)
@@ -55,9 +57,40 @@ class MessageCreate(BaseModel):
     file_url: Optional[str] = None
     stt_conf: float = Field(0.0, ge=0.0, le=1.0)
 
-# =========================================================
-# 3. Helpers & Logic
-# =========================================================
+class FaceSaveRequest(BaseModel):
+    sess_id: int
+    label:   str
+    score:   float
+    dist:    dict
+
+class ConsentRequest(BaseModel):
+    ok_text:  Optional[bool] = None
+    ok_voice: Optional[bool] = None
+    ok_face:  Optional[bool] = None
+
+class QualityCreate(BaseModel):
+    flow:  float = Field(..., ge=0.0, le=100.0)
+    score: float = Field(..., ge=0.0, le=100.0)
+
+class SttCreate(BaseModel):
+    sess_id: int   = Field(..., ge=1)
+    speaker: str   = Field(..., pattern="^(COUNSELOR|CLIENT)$")
+    s_ms:    int   = Field(..., ge=0)
+    e_ms:    int   = Field(..., ge=0)
+    text:    str
+    conf:    float = Field(0.0, ge=0.0, le=1.0)
+
+class SessionCloseRequest(BaseModel):
+    end_reason: str  = Field("NORMAL", pattern="^(NORMAL|DROPOUT|TECH|UNKNOWN)$")
+    sat:         Optional[int] = Field(None, ge=0, le=1)
+    sat_note:   Optional[str] = None
+
+# ---------------------------------------------------------
+# Helpers & Logic
+# ---------------------------------------------------------
+def hash_pwd(pwd: str) -> str:
+    return hashlib.sha256(pwd.encode()).hexdigest()
+
 def detect_dropout_signal(message: Optional[str]) -> Optional[Dict[str, Any]]:
     if not message:
         return None
@@ -81,9 +114,9 @@ def detect_dropout_signal(message: Optional[str]) -> Optional[Dict[str, Any]]:
         }
     return None
 
-# =========================================================
-# 4. Auth (명세서 기준: client는 pwd 없음)
-# =========================================================
+# ---------------------------------------------------------
+# Auth (테이블 명세서 기반 필수 필드 검증 적용)
+# ---------------------------------------------------------
 
 @app.post("/auth/signup")
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
@@ -91,33 +124,39 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
         role = (payload.role or "").strip().lower()
 
         if role == "counselor":
-            # 상담사 가입: email/pwd/name 필수
             if not payload.email:
                 raise HTTPException(status_code=400, detail="상담사는 이메일이 필수입니다.")
             if not payload.pwd:
                 raise HTTPException(status_code=400, detail="상담사는 비밀번호가 필수입니다.")
-
             sql = "INSERT INTO counselor (email, pwd, name) VALUES (:email, :pwd, :name)"
-            params = {"email": payload.email, "pwd": payload.pwd, "name": payload.name}
+            params = {"email": payload.email, "pwd": hash_pwd(payload.pwd), "name": payload.name}
+            db.execute(text(sql), params)
 
         elif role == "client":
-            # 내담자 등록: phone/name 필수, pwd 없음
-            if not payload.phone:
-                raise HTTPException(status_code=400, detail="내담자는 전화번호가 필수입니다.")
+            # 테이블 명세서 제약 조건에 맞게 email, pwd 필수 확인 로직 적용
+            if not payload.email or not payload.pwd:
+                raise HTTPException(status_code=400, detail="내담자 이메일과 비밀번호는 필수입니다.")
 
-            clean_phone = "".join(filter(str.isdigit, payload.phone))
-            client_code = f"CL-{uuid.uuid4().hex[:8].upper()}"
-
+            clean_phone = "".join(filter(str.isdigit, payload.phone or ""))
+            if not clean_phone:
+                raise HTTPException(status_code=400, detail="연락처는 필수입니다.")
+            
             sql = """
-                INSERT INTO client (code, name, phone, status, active)
-                VALUES (:code, :name, :phone, '안정', TRUE)
+                INSERT INTO client (code, name, phone, email, pwd, status, active)
+                VALUES (:code, :name, :phone, :email, :pwd, '안정', TRUE)
             """
-            params = {"code": client_code, "name": payload.name, "phone": clean_phone}
+            params = {
+                "code": f"CL-{uuid.uuid4().hex[:8].upper()}",
+                "name": payload.name,
+                "phone": clean_phone,
+                "email": payload.email,
+                "pwd": hash_pwd(payload.pwd)
+            }
+            db.execute(text(sql), params)
 
         else:
             raise HTTPException(status_code=400, detail="role은 counselor 또는 client 여야 합니다.")
 
-        db.execute(text(sql), params)
         db.commit()
         return {"status": "success"}
 
@@ -131,49 +170,25 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
 
 @app.post("/login")
 def counselor_login(payload: LoginRequest, db: Session = Depends(get_db)):
-    # 상담사 로그인 (email + pwd)
     sql = "SELECT id, name FROM counselor WHERE email = :email AND pwd = :pwd"
-    counselor = db.execute(text(sql), {"email": payload.email, "pwd": payload.pwd}).mappings().first()
-
+    counselor = db.execute(text(sql), {"email": payload.email, "pwd": hash_pwd(payload.pwd)}).mappings().first()
     if counselor:
-        return {
-            "status": "success",
-            "role": "counselor",
-            "counselor_id": counselor["id"],
-            "counselor_name": counselor["name"]
-        }
-
+        return {"status": "success", "role": "counselor", "counselor_id": counselor["id"], "counselor_name": counselor["name"]}
     raise HTTPException(status_code=401, detail="계정 정보가 일치하지 않습니다.")
 
 
 @app.post("/client/login")
 def client_login(payload: ClientLoginRequest, db: Session = Depends(get_db)):
-    # 내담자 입장 (phone + code)  ※ pwd 없음
-    clean_phone = "".join(filter(str.isdigit, payload.phone or ""))
-    clean_code = (payload.code or "").strip()
-
-    if not clean_phone:
-        raise HTTPException(status_code=400, detail="전화번호가 필요합니다.")
-    if not clean_code:
-        raise HTTPException(status_code=400, detail="내담자 코드가 필요합니다.")
-
+    # 프론트엔드 연동 규격에 맞춰 email, pwd 대조 방식으로 수정
     row = db.execute(text("""
-        SELECT id, name, code
-        FROM client
-        WHERE phone = :phone AND code = :code AND active = TRUE
-        LIMIT 1
-    """), {"phone": clean_phone, "code": clean_code}).mappings().first()
-
+        SELECT id, name, code FROM client
+        WHERE email = :email AND pwd = :pwd AND active = TRUE LIMIT 1
+    """), {"email": payload.email, "pwd": hash_pwd(payload.pwd)}).mappings().first()
+    
     if not row:
-        raise HTTPException(status_code=401, detail="전화번호/코드가 일치하지 않습니다.")
+        raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 일치하지 않습니다.")
+    return {"status": "success", "role": "client", "client_id": row["id"], "client_name": row["name"], "client_code": row["code"]}
 
-    return {
-        "status": "success",
-        "role": "client",
-        "client_id": row["id"],
-        "client_name": row["name"],
-        "client_code": row["code"]
-    }
 
 class ClientStartSessionRequest(BaseModel):
     client_id: int = Field(..., ge=1)
@@ -181,30 +196,22 @@ class ClientStartSessionRequest(BaseModel):
 
 @app.post("/client/start-session")
 def client_start_session(payload: ClientStartSessionRequest, db: Session = Depends(get_db)):
-    # 1) 진행중(미종료) 세션 재사용: progress가 ACTIVE/WAITING 이고 end_at이 비어있으면 재사용
     existing = db.execute(text("""
-        SELECT id
-        FROM sess
-        WHERE client_id = :clid
-          AND counselor_id = :coid
-          AND (end_at IS NULL)
-          AND (progress IN ('WAITING','ACTIVE'))
-        ORDER BY id DESC
-        LIMIT 1
+        SELECT id FROM sess
+        WHERE client_id = :clid AND counselor_id = :coid
+          AND (end_at IS NULL) AND (progress IN ('WAITING','ACTIVE'))
+        ORDER BY id DESC LIMIT 1
     """), {"clid": payload.client_id, "coid": payload.counselor_id}).scalar()
-
     if existing:
         return {"status": "success", "sess_id": int(existing), "reused": True}
-
-    # 2) 없으면 새로 생성 (schema 기준: uuid 필수)
     new_uuid = str(uuid.uuid4())
     res = db.execute(text("""
         INSERT INTO sess (uuid, counselor_id, client_id, channel, progress)
         VALUES (:uuid, :coid, :clid, 'CHAT', 'ACTIVE')
     """), {"uuid": new_uuid, "coid": payload.counselor_id, "clid": payload.client_id})
-
     db.commit()
     return {"status": "success", "sess_id": int(res.lastrowid), "reused": False}
+
 
 @app.get("/health/db")
 def health_db(db: Session = Depends(get_db)):
@@ -214,9 +221,9 @@ def health_db(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB Connection Error: {str(e)}")
 
-# =========================================================
-# 5. Core APIs (기존 기능 100% 보존 - 수정 없음)
-# =========================================================
+# ---------------------------------------------------------
+# Core APIs
+# ---------------------------------------------------------
 @app.get("/sessions")
 def list_sessions(counselor_id: Optional[int] = Query(None, ge=1), limit: int = Query(50), db: Session = Depends(get_db)):
     sql = """
@@ -232,17 +239,17 @@ def list_sessions(counselor_id: Optional[int] = Query(None, ge=1), limit: int = 
 def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
     try:
         res = db.execute(text("""
-            INSERT INTO msg (sess_id, speaker, speaker_id, text, emoji, file_url, stt_conf, at)
+            INSERT INTO msg (sess_id, sender_type, sender_id, text, emoji, file_url, stt_conf, at)
             VALUES (:sid, :speaker, :speaker_id, :text, :emoji, :file_url, :stt_conf, NOW())
         """), {
-            "sid": payload.sess_id, "speaker": payload.speaker, 
+            "sid": payload.sess_id, "speaker": payload.speaker,
             "speaker_id": None if payload.speaker == "SYSTEM" else payload.speaker_id,
             "text": payload.text, "emoji": payload.emoji, "file_url": payload.file_url, "stt_conf": payload.stt_conf
         })
-
         msg_id = res.lastrowid
-        detection = None
+        db.commit() # 외래키 참조 에러 방지를 위한 선 커밋 로직 추가
 
+        detection = None
         if payload.speaker == "CLIENT":
             detection = detect_dropout_signal(payload.text)
             if detection:
@@ -254,6 +261,25 @@ def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
                     "status": detection["status"], "score": detection["score"],
                     "rule": detection["rule"], "action": detection["action"]
                 })
+                
+        if payload.speaker == "CLIENT" and payload.text:
+            _t = payload.text
+            _high  = ["죽고싶", "자해", "사라지고싶", "없어지고싶", "끝내고싶"]
+            _neg   = ["그만", "포기", "싫어", "힘들", "못하겠", "의미없", "안 할래"]
+            _pos   = ["감사", "좋아", "행복", "기쁘", "즐거", "다행"]
+            
+            if any(k in _t for k in _high): _label, _score = "fear", 0.90
+            elif any(k in _t for k in _neg): _label, _score = "sad", 0.70
+            elif any(k in _t for k in _pos): _label, _score = "happy", 0.70
+            else: _label, _score = "neutral", 0.50
+                
+            db.execute(text("""
+                INSERT INTO text_emotion (msg_id, label, score, meta)
+                VALUES (:mid, :label, :score, :meta)
+            """), {
+                "mid": msg_id, "label": _label, "score": _score,
+                "meta": json.dumps({"engine": "rule", "version": "1.0"})
+            })
 
         db.commit()
         return {"status": "saved", "msg_id": msg_id, "detection": detection}
@@ -263,46 +289,76 @@ def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
 
 @app.get("/sessions/{sess_id}/dashboard")
 def session_dashboard(sess_id: int, db: Session = Depends(get_db)):
-    sess_sql = """
+    sess = db.execute(text("""
         SELECT s.*, c.name AS client_name, c.status AS client_status
         FROM sess s JOIN client c ON c.id = s.client_id WHERE s.id = :sid
-    """
-    sess = db.execute(text(sess_sql), {"sid": sess_id}).mappings().first()
+    """), {"sid": sess_id}).mappings().first()
     if not sess: raise HTTPException(status_code=404, detail="sess_id not found")
-
-    risk_score = float(db.execute(text("SELECT COALESCE(AVG(score), 0) FROM alert WHERE sess_id = :sid"), {"sid": sess_id}).scalar() or 0.0)
     
+    risk_score = float(db.execute(text("SELECT COALESCE(AVG(score), 0) FROM alert WHERE sess_id = :sid"), {"sid": sess_id}).scalar() or 0.0)
     topic_analysis = db.execute(text("""
-        SELECT t.name as topic_name, sa.summary, sa.note
+        SELECT sa.topic_id, t.name as topic_name, sa.summary, sa.note
         FROM sess_analysis sa JOIN topic t ON sa.topic_id = t.id WHERE sa.sess_id = :sid
     """), {"sid": sess_id}).mappings().all()
+
+    total_alerts = int(db.execute(text("SELECT COUNT(*) FROM alert WHERE sess_id = :sid"), {"sid": sess_id}).scalar() or 0)
+    alert_types_rows = db.execute(text("""
+        SELECT type, COUNT(*) AS cnt
+        FROM alert WHERE sess_id = :sid
+        GROUP BY type ORDER BY cnt DESC
+    """), {"sid": sess_id}).mappings().all()
+    alert_types = [{"type": r["type"], "cnt": int(r["cnt"])} for r in alert_types_rows]
+
+    quality = None
+    try:
+        quality_row = db.execute(text("SELECT flow, score FROM quality WHERE sess_id = :sid LIMIT 1"), {"sid": sess_id}).mappings().first()
+        if quality_row:
+            quality = {"flow": float(quality_row["flow"] or 0), "score": float(quality_row["score"] or 0)}
+    except: pass
 
     return {
         "session": jsonable_encoder(sess),
         "risk_score": risk_score,
         "topic_analysis": jsonable_encoder(topic_analysis),
-        "risk_label": "HIGH" if risk_score >= 0.7 else "MID" if risk_score >= 0.4 else "LOW"
+        "risk_label": "HIGH" if risk_score >= 0.7 else "MID" if risk_score >= 0.4 else "LOW",
+        "alert_summary": {"total_alerts": total_alerts},
+        "alert_types": alert_types,
+        "quality": quality
     }
 
 @app.get("/sessions/{sess_id}/messages")
 def session_messages(sess_id: int, limit: int = Query(200, ge=1), db: Session = Depends(get_db)):
-    sql = "SELECT id, sess_id, speaker, speaker_id, text, emoji, file_url, stt_conf, at FROM msg WHERE sess_id = :sid ORDER BY at DESC LIMIT :l"
-    result = db.execute(text(sql), {"sid": sess_id, "l": limit}).mappings().all()
+    result = db.execute(text("""
+        SELECT id, sess_id, sender_type AS speaker, sender_id AS speaker_id, text, emoji, file_url, stt_conf, at 
+        FROM msg 
+        WHERE sess_id = :sid ORDER BY at DESC LIMIT :l
+    """), {"sid": sess_id, "l": limit}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
 
 @app.get("/sessions/{sess_id}/alerts")
-def session_alerts(sess_id: int, limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db)):
+def session_alerts(sess_id: int, limit: int = Query(200, ge=1), db: Session = Depends(get_db)):
     result = db.execute(text("SELECT * FROM alert WHERE sess_id = :sid ORDER BY at DESC LIMIT :l"), {"sid": sess_id, "l": limit}).mappings().all()
+    return {"items": jsonable_encoder(list(result))}
+
+@app.get("/sessions/{sess_id}/emotions")
+def session_emotions(sess_id: int, db: Session = Depends(get_db)):
+    result = db.execute(text("""
+        SELECT te.id, te.msg_id, te.label, te.score, te.meta, m.at AS created_at
+        FROM text_emotion te
+        JOIN msg m ON te.msg_id = m.id
+        WHERE m.sess_id = :sid
+        ORDER BY m.at ASC
+    """), {"sid": sess_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
 
 @app.get("/appointments")
 def get_appointments(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
-    sql = "SELECT a.id, c.name AS client_name, a.at, a.status, c.status AS client_grade FROM appt a JOIN client c ON a.client_id = c.id WHERE a.counselor_id = :cid ORDER BY a.at ASC"
+    sql = "SELECT a.id, a.counselor_id, c.name AS client_name, a.at, a.status, c.status AS client_grade FROM appt a JOIN client c ON a.client_id = c.id WHERE a.counselor_id = :cid ORDER BY a.at ASC"
     return {"items": jsonable_encoder(list(db.execute(text(sql), {"cid": counselor_id}).mappings().all()))}
 
-# =========================================================
-# 6. Stats APIs (기존 통계 기능 100% 보존)
-# =========================================================
+# ---------------------------------------------------------
+# Stats APIs
+# ---------------------------------------------------------
 @app.get("/stats/topic-dropout")
 def topic_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
     sql = """
@@ -317,12 +373,26 @@ def topic_dropout(counselor_id: int = Query(..., ge=1), db: Session = Depends(ge
 @app.get("/stats/quality-trend")
 def quality_trend(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
     sql = """
-        SELECT DATE(s.start_at) AS date_label, AVG(s.sat) * 100 AS avg_sat_rate, AVG(a.score) AS avg_risk_score
-        FROM sess s LEFT JOIN alert a ON s.id = a.sess_id
-        WHERE s.counselor_id = :cid GROUP BY DATE(s.start_at) ORDER BY DATE(s.start_at) ASC
+        SELECT DATE(s.start_at) AS date_label,
+               AVG(s.sat) * 100         AS avg_sat_rate,
+               AVG(a.score)             AS avg_risk_score,
+               AVG(q.flow)              AS avg_flow,
+               AVG(q.score)             AS avg_quality_score
+        FROM sess s
+        LEFT JOIN alert   a ON s.id = a.sess_id
+        LEFT JOIN quality q ON s.id = q.sess_id
+        WHERE s.counselor_id = :cid
+        GROUP BY DATE(s.start_at)
+        ORDER BY DATE(s.start_at) ASC
     """
     result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
-    formatted = [{"date_label": r["date_label"].strftime('%m-%d'), "avg_sat_rate": float(r["avg_sat_rate"] or 0), "avg_risk_score": float(r["avg_risk_score"] or 0)} for r in result]
+    formatted = [{
+        "date_label":        r["date_label"].strftime('%m-%d'),
+        "avg_sat_rate":      float(r["avg_sat_rate"]      or 0),
+        "avg_risk_score":    float(r["avg_risk_score"]    or 0),
+        "avg_flow":          float(r["avg_flow"]          or 0),
+        "avg_quality_score": float(r["avg_quality_score"] or 0)
+    } for r in result]
     return {"items": jsonable_encoder(formatted)}
 
 @app.get("/stats/client-grade-dropout")
@@ -344,3 +414,187 @@ def stats_channel_dropout(counselor_id: int = Query(..., ge=1), db: Session = De
 def stats_monthly_growth(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
     sql = "SELECT DATE_FORMAT(s.start_at, '%Y-%m') AS month, COUNT(*) AS total, (COUNT(CASE WHEN s.end_reason='DROPOUT' THEN 1 END) / NULLIF(COUNT(*),0)) * 100 AS dropout_rate FROM sess s WHERE s.counselor_id = :cid GROUP BY month ORDER BY month ASC"
     return {"items": jsonable_encoder(list(db.execute(text(sql), {"cid": counselor_id}).mappings().all()))}
+
+
+# ---------------------------------------------------------
+# 얼굴 감정 분석 저장 및 동의, STT, Quality 연동 API
+# ---------------------------------------------------------
+
+@app.post("/face/save")
+def save_face(payload: FaceSaveRequest, db: Session = Depends(get_db)):
+    try:
+        ok = db.execute(text("SELECT ok_face FROM sess WHERE id = :sid"), {"sid": payload.sess_id}).scalar()
+        if not ok: return {"status": "skipped", "reason": "ok_face 미동의"}
+
+        db.execute(text("""
+            INSERT INTO face (sess_id, at, label, score, dist, meta)
+            VALUES (:sess_id, NOW(), :label, :score, :dist, :meta)
+        """), {
+            "sess_id": payload.sess_id, "label": payload.label, "score": payload.score,
+            "dist": json.dumps(payload.dist), "meta": json.dumps({"engine": "deepface", "version": "0.4"})
+        })
+        db.commit()
+        return {"status": "saved"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/sessions/{sess_id}/consent")
+def update_consent(sess_id: int, payload: ConsentRequest, db: Session = Depends(get_db)):
+    try:
+        fields = {k: v for k, v in payload.dict().items() if v is not None}
+        if not fields: raise HTTPException(status_code=400, detail="업데이트할 항목이 없습니다.")
+        set_clause = ", ".join([f"{k} = :{k}" for k in fields])
+        fields["sess_id"] = sess_id
+        db.execute(text(f"UPDATE sess SET {set_clause} WHERE id = :sess_id"), fields)
+        db.commit()
+        return {"status": "updated"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/sessions/{sess_id}/consent")
+def get_consent(sess_id: int, db: Session = Depends(get_db)):
+    row = db.execute(text("SELECT ok_text, ok_voice, ok_face FROM sess WHERE id = :sid"), {"sid": sess_id}).mappings().first()
+    if not row: raise HTTPException(status_code=404, detail="세션 없음")
+    return {"ok_text": bool(row["ok_text"]), "ok_voice": bool(row["ok_voice"]), "ok_face": bool(row["ok_face"])}
+
+@app.get("/stats/recent-alerts")
+def recent_alerts(counselor_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
+    # 프론트엔드 Main.html 연동을 위해 action 필드를 reasonMsg 별칭으로 조회하도록 변경
+    sql = """
+        SELECT a.id, a.sess_id, a.msg_id, a.type, a.status, a.score, a.rule, a.at, a.action AS reasonMsg,
+               c.name AS client_name
+        FROM alert a JOIN sess s ON a.sess_id = s.id JOIN client c ON s.client_id = c.id
+        WHERE s.counselor_id = :cid AND a.status = 'DETECTED'
+        ORDER BY a.score DESC LIMIT 20
+    """
+    result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
+    return {"items": jsonable_encoder(list(result))}
+
+
+# UC-07: 상담사 의견 메모 저장 (sess_analysis.note 업데이트)
+class NoteUpdateRequest(BaseModel):
+    topic_id: int = Field(..., ge=1)
+    note: str
+
+@app.patch("/sessions/{sess_id}/analysis")
+def update_analysis_note(sess_id: int, payload: NoteUpdateRequest, db: Session = Depends(get_db)):
+    try:
+        row = db.execute(text("""
+            SELECT id FROM sess_analysis WHERE sess_id = :sid AND topic_id = :tid
+        """), {"sid": sess_id, "tid": payload.topic_id}).scalar()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="해당 세션/토픽의 분석 데이터가 없습니다.")
+
+        db.execute(text("""
+            UPDATE sess_analysis SET note = :note WHERE sess_id = :sid AND topic_id = :tid
+        """), {"note": payload.note, "sid": sess_id, "tid": payload.topic_id})
+        db.commit()
+        return {"status": "saved"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/sessions/{sess_id}/quality")
+def save_quality(sess_id: int, payload: QualityCreate, db: Session = Depends(get_db)):
+    try:
+        db.execute(text("""
+            INSERT INTO quality (sess_id, flow, score) VALUES (:sid, :flow, :score)
+            ON DUPLICATE KEY UPDATE flow = :flow, score = :score
+        """), {"sid": sess_id, "flow": payload.flow, "score": payload.score})
+        db.commit()
+        return {"status": "saved"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/stt")
+def create_stt(payload: SttCreate, db: Session = Depends(get_db)):
+    try:
+        ok = db.execute(text("SELECT ok_voice FROM sess WHERE id = :sid"), {"sid": payload.sess_id}).scalar()
+        if not ok: return {"status": "skipped"}
+
+        db.execute(text("""
+            INSERT INTO stt (sess_id, speaker, s_ms, e_ms, text, conf, meta)
+            VALUES (:sid, :speaker, :s_ms, :e_ms, :text, :conf, :meta)
+        """), {**payload.dict(), "sid": payload.sess_id, "meta": json.dumps({"engine": "WebSpeechAPI"})})
+        db.commit()
+        return {"status": "saved"}
+    except Exception as e:
+        db.rollback(); raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/sessions/{sess_id}/close")
+def close_session(sess_id: int, payload: SessionCloseRequest, db: Session = Depends(get_db)):
+    try:
+        db.execute(text("""
+            UPDATE sess SET end_at = NOW(), progress = 'CLOSED', 
+            end_reason = :end_reason, sat = :sat, sat_note = :sat_note
+            WHERE id = :sid
+        """), {
+            "sid":        sess_id,
+            "end_reason": payload.end_reason,
+            "sat":        payload.sat,
+            "sat_note":   payload.sat_note
+        })
+
+        client_row = db.execute(text(
+            "SELECT client_id FROM sess WHERE id = :sid"
+        ), {"sid": sess_id}).mappings().first()
+
+        if client_row:
+            cid = client_row["client_id"]
+            stats = db.execute(text("""
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN end_reason = 'DROPOUT' THEN 1 ELSE 0 END) AS dropout_cnt,
+                    SUM(CASE WHEN sat = 0 THEN 1 ELSE 0 END) AS unsat_cnt
+                FROM sess
+                WHERE client_id = :cid AND progress = 'CLOSED'
+            """), {"cid": cid}).mappings().first()
+
+            total       = int(stats["total"] or 0)
+            dropout_cnt = int(stats["dropout_cnt"] or 0)
+            unsat_cnt   = int(stats["unsat_cnt"] or 0)
+            dropout_rate = (dropout_cnt / total) if total > 0 else 0
+
+            if dropout_rate >= 0.5:
+                new_status = "개선필요"
+            elif dropout_rate >= 0.3 or unsat_cnt > 0:
+                new_status = "주의"
+            else:
+                new_status = "안정"
+
+            db.execute(text(
+                "UPDATE client SET status = :status WHERE id = :cid"
+            ), {"status": new_status, "cid": cid})
+
+        db.commit()
+
+        try:
+            clova = ClovaXClient(
+                api_key=os.getenv("CLOVA_API_KEY", ""),
+                endpoint_id=os.getenv("CLOVA_ENDPOINT_ID", ""),
+            )
+            run_core_features(
+                clova,
+                sess_id=sess_id,
+                topic_id=1,
+                host=os.getenv("DB_HOST", "localhost"),
+                port=int(os.getenv("DB_PORT", 3307)),
+                user=os.getenv("DB_USER", ""),
+                password=os.getenv("DB_PASSWORD", ""),
+                database=os.getenv("DB_NAME", ""),
+            )
+        except Exception as e_run:
+            print(f"[runner 트리거 실패] {e_run}")
+
+        return {"status": "closed", "sess_id": sess_id, "end_reason": payload.end_reason}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))

@@ -1,6 +1,6 @@
 -- =====================================================
 -- [최종 완성본] MindWay 데이터베이스 스키마
--- 작성일: 2026.02.14 / 작성자: 정이안
+-- 작성일: 2026.02.24 / 작성자: 정이안
 -- 과제명: 상담 이탈 신호 탐지 및 상담 품질 분석 AI 서비스
 -- =====================================================
 -- 특징: 
@@ -33,18 +33,20 @@ CREATE TABLE IF NOT EXISTS counselor (
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS client (
     id         BIGINT NOT NULL AUTO_INCREMENT,
+    email      VARCHAR(50) NOT NULL COMMENT '로그인 ID',
+    pwd        VARCHAR(255) NOT NULL COMMENT '비밀번호(암호화 저장)',
     code       VARCHAR(30) NOT NULL COMMENT '내담자 고유 코드',
     name       VARCHAR(50) NOT NULL,
     status     ENUM('안정', '주의', '개선필요') NOT NULL DEFAULT '안정' COMMENT '위험도 등급',
-    phone      VARCHAR(20) NULL,
-    active     BOOLEAN NOT NULL DEFAULT TRUE,
+    phone      VARCHAR(20) NOT NULL,
+    active     TINYINT(1) NOT NULL DEFAULT '1',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uk_client_code (code),
+    UNIQUE KEY uk_client_email (email),
     KEY ix_client_name (name),
-    KEY ix_client_status_active (status, active),
-    CONSTRAINT ck_client_status CHECK (status IN ('안정', '주의', '개선필요'))
+    KEY ix_client_status_active (status, active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='내담자 마스터';
 
 -- -----------------------------------------------------
@@ -122,8 +124,8 @@ CREATE TABLE IF NOT EXISTS sess (
 CREATE TABLE IF NOT EXISTS msg (
     id          BIGINT NOT NULL AUTO_INCREMENT,
     sess_id     BIGINT NOT NULL,
-    speaker     ENUM('COUNSELOR', 'CLIENT', 'SYSTEM') NOT NULL,
-    speaker_id  BIGINT NULL,
+    sender_type ENUM('COUNSELOR', 'CLIENT', 'SYSTEM') NOT NULL,
+    sender_id   BIGINT NULL,
     text        TEXT NULL,
     emoji       TEXT NULL COMMENT '이모지 데이터', -- [추가] 명세서 규격 반영
     file_url    TEXT NULL COMMENT '파일 업로드 경로', -- [추가] 명세서 규격 반영
@@ -133,6 +135,7 @@ CREATE TABLE IF NOT EXISTS msg (
     UNIQUE KEY uk_msg_id_sess (id, sess_id) COMMENT 'Alert 테이블 복합키 참조용',
     KEY ix_msg_sess_time (sess_id, at),
     CONSTRAINT fk_msg_sess FOREIGN KEY (sess_id) REFERENCES sess(id),
+    CONSTRAINT ck_msg_sender_type CHECK (sender_type IN ('COUNSELOR','CLIENT','SYSTEM')),
     CONSTRAINT ck_msg_stt_conf CHECK (stt_conf BETWEEN 0.00 AND 1.00)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='상담 메시지 로그';
 

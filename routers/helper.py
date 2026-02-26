@@ -10,14 +10,17 @@ from typing import Optional, Dict, Any, List
 router = APIRouter(prefix="/helper", tags=["helper"])
 
 # =========================================================
-# 시스템 프롬프트 (v2 - 개입 전략 방향 버전)
+# 시스템 프롬프트 (수정됨: 지침이 아닌 '내담자 전송용 답변' 생성)
 # =========================================================
 SYSTEM_PROMPT = (
     "너는 심리상담사의 의사결정을 실시간으로 보조하는 AI 헬퍼다."
     " 너는 상담사 대신 말하거나 내담자에게 직접 답하지 않는다."
     " 너는 상담사가 다음 개입을 결정할 수 있도록 분석 정보를 제공한다."
     " [절대 규칙]"
-    " 출력은 반드시 JSON 한 줄만. 설명/문장/마크다운/코드블록 금지."
+    " 1. 출력은 반드시 JSON 한 줄만 보낼 것. 설명/마크다운 금지."
+    " 2. suggestions 리스트의 'direction' 필드에는 상담사가 내담자에게 '직접 전송할 수 있는 공감적인 구체적 답변 문장'을 1~2문장으로 작성하라."
+    " 3. (~해보세요, ~하십시오) 같은 상담사 대상 지침은 절대 direction에 넣지 마라."
+    " 4. (~했군요, ~군요, ~하는군요) 같은 내담자 대상 공감 화법을 사용하라."
     " JSON은 반드시 파싱 가능해야 한다."
     " 필수 키: insight, emotions, intent, risk, suggestions"
     " emotions는 문자열 리스트 3개 이상."
@@ -31,7 +34,7 @@ SYSTEM_PROMPT = (
     " [suggestions 규칙]"
     " type: 개입 유형(공감 심화/회피 탐색/목표 재확인/위험 모니터링 등)."
     " rationale: 이 개입이 필요한 근거."
-    " direction: 상담사가 취할 구체적 전략 방향 1~2문장."
+    " direction: 상담사가 취할 구체적 답변 문장."
     " [스키마]"
     " {insight: 한문장요약, emotions: [감정1,감정2,감정3],"
     " intent: 욕구추정, risk: {level: Normal|Caution|High,"
@@ -44,7 +47,7 @@ SYSTEM_PROMPT = (
 NEG_KEYS = ["그만", "포기", "싫어", "힘들", "못하겠", "안 할래", "의미없", "죽고싶"]
 HIGH_RISK_KEYS = ["죽고싶", "자해", "사라지고싶", "없어지고싶", "끝내고싶"]
 
-JSON_RE = re.compile(r"{.*}", re.DOTALL)
+JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 # =========================================================
 # Request / Response 스키마
@@ -78,21 +81,29 @@ def _fallback_result(reason: str = "") -> Dict[str, Any]:
             "message": "응답 오류. 상담사가 직접 판단 필요"
         },
         "suggestions": [
-            {"type": "공감 심화",    "rationale": "분석 실패", "direction": "내담자 감정 반영 탐색 필요"},
-            {"type": "탐색",         "rationale": "분석 실패", "direction": "핵심 주제 재확인 질문 고려"},
-            {"type": "목표/다음단계","rationale": "분석 실패", "direction": "상담 속도 조율 및 안전 확인"}
+            {"type": "공감 심화",    "rationale": "분석 실패", "direction": "내담자의 마음이 많이 힘들었겠군요. 조금 더 자세히 말씀해주실 수 있을까요?"},
+            {"type": "탐색",         "rationale": "분석 실패", "direction": "그 상황에서 어떤 기분이 가장 크게 드셨는지 궁금해요."},
+            {"type": "목표/다음단계","rationale": "분석 실패", "direction": "지금 느끼시는 감정을 함께 천천히 살펴보면 좋겠습니다."}
         ],
         "type": "NORMAL"
     }
 
 def safe_json_extract(text):
+    """강화된 JSON 추출기: AI의 답변 노이즈를 완벽하게 제거함"""
     if text is None:
         return None
-    m = JSON_RE.search(str(text).strip())
+    text_str = str(text).strip()
+    # 마크다운 태그 제거
+    text_str = re.sub(r"```[a-zA-Z]*", "", text_str)
+    text_str = text_str.replace("```", "")
+    
+    m = JSON_RE.search(text_str)
     if not m:
         return None
     try:
-        return json.loads(m.group(0))
+        # 줄바꿈 및 특수문자 정제 후 파싱
+        clean_content = m.group(0).replace('\n', ' ').replace('\r', '')
+        return json.loads(clean_content)
     except Exception:
         return None
 
@@ -141,12 +152,12 @@ def rule_check(text: str) -> Dict[str, Any]:
             "risk_level": "Normal"}
 
 # =========================================================
-# HCX 호출 (비스트리밍 JSON 응답)
+# HCX 호출 및 재시도 로직
 # =========================================================
 def call_hcx(messages: List[Dict[str, str]],
              temperature: float = 0.2,
              max_tokens: int = 300) -> Optional[str]:
-    host    = _env("HCX_HOST", "https://clovastudio.stream.ntruss.com")
+    host    = _env("HCX_HOST", "[https://clovastudio.stream.ntruss.com](https://clovastudio.stream.ntruss.com)")
     model   = _env("HCX_MODEL", "HCX-DASH-002")
     api_key = _env("HCX_API_KEY")
     req_id  = _env("HCX_REQUEST_ID", "mindway-helper")
@@ -167,10 +178,9 @@ def call_hcx(messages: List[Dict[str, str]],
         "maxTokens": max_tokens,
     }
 
-    t0  = time.time()
     res = requests.post(url, headers=headers, json=payload, timeout=timeout)
     if not res.ok:
-        raise RuntimeError("HCX HTTP 실패: " + str(res.status_code) + " " + res.text[:200])
+        raise RuntimeError("HCX HTTP 실패: " + str(res.status_code))
 
     data = res.json()
     content = None
@@ -185,9 +195,6 @@ def call_hcx(messages: List[Dict[str, str]],
             pass
     return content
 
-# =========================================================
-# HCX 분석 + 재시도
-# =========================================================
 def analyze_with_hcx(client_text: str,
                      history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
     history_block = ""
@@ -198,14 +205,10 @@ def analyze_with_hcx(client_text: str,
         )
 
     user_content = "[이전 대화]\n" + (history_block or "(없음)") + "\n\n[현재 내담자 발화]\n" + client_text.strip()
-
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": user_content},
-    ]
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_content}]
 
     # 1차 시도
-    content = call_hcx(messages, temperature=0.2, max_tokens=300)
+    content = call_hcx(messages, temperature=0.2, max_tokens=1000)
     obj = safe_json_extract(content)
     if obj and check_completeness(obj):
         return obj
@@ -213,7 +216,7 @@ def analyze_with_hcx(client_text: str,
     time.sleep(0.15)
 
     # 2차 재시도 (temperature=0 으로 형식 고정)
-    content = call_hcx(messages, temperature=0.0, max_tokens=300)
+    content = call_hcx(messages, temperature=0.0, max_tokens=1000)
     obj = safe_json_extract(content)
     if obj and check_completeness(obj):
         return obj
@@ -226,18 +229,14 @@ def analyze_with_hcx(client_text: str,
 @router.post("/suggestion")
 def helper_suggestion(payload: HelperRequest):
     text = (payload.last_client_text or "").strip()
-
-    # 1단계: 룰 기반 1차 필터
     rule = rule_check(text)
-    if rule.get("skip_hcx"):
-        return rule
+    if rule.get("skip_hcx"): return rule
 
     use_hcx = _env("USE_HCX", "0") == "1"
     if not use_hcx:
         rule["mode"] = "RULE_ONLY"
         return rule
 
-    # 2단계: HCX 심층 분석
     try:
         obj = analyze_with_hcx(text, payload.history)
         if obj is None:
@@ -245,8 +244,6 @@ def helper_suggestion(payload: HelperRequest):
         else:
             risk_level = obj.get("risk", {}).get("level", "Normal")
             churn = 1 if risk_level in ("Caution", "High") else 0
-
-            # 룰에서 감지된 churn_signal 이 더 높으면 유지
             churn = max(churn, rule.get("churn_signal", 0))
 
             result = {
@@ -259,8 +256,6 @@ def helper_suggestion(payload: HelperRequest):
                 "risk":        obj.get("risk", {}),
                 "suggestions": obj.get("suggestions", []),
             }
-
     except Exception as e:
         result = _fallback_result(str(e))
-
     return result

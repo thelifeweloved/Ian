@@ -76,20 +76,20 @@
                         <input type="password" id="loginPassword" class="input-control" placeholder="비밀번호를 입력하세요" required>
                         <i class="fa-regular fa-eye-slash eye-icon" onclick="togglePassword('loginPassword', this)"></i>
                     </div>
-                    <button type="submit" class="main-btn">Login</button>
+                    <button type="submit" class="main-btn">대시보드로 이동</button>
                 </form>
 
                 <form id="login-client-form" class="hidden" onsubmit="handleClientLogin(event)">
                     <div class="input-group" style="margin-bottom: 0.9rem;">
                         <i class="fa-solid fa-phone"></i>
-                        <input type="tel" id="clientPhone" class="input-control" placeholder="전화번호 (010-0000-0000)" required>
+                        <input type="email" id="clientEmail" class="input-control" placeholder="이메일" required>
                     </div>
                     <div class="input-group">
-                        <i class="fa-solid fa-key"></i>
-                        <input type="text" id="clientCode" class="input-control" placeholder="내담자 코드 (예: CL-0CEEC12C)" required>
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="clientPwd" class="input-control" placeholder="비밀번호를 입력하세요" required>
                     </div>
                     <div class="info-box" style="margin-top: 0.9rem;">
-                        <p>💡 안내: 내담자 코드는 등록 시 생성됩니다. 상담사가 안내한 코드를 입력하세요.</p>
+                        <p>💡 안내: 이제 내담자도 부여받은 이메일과 비밀번호로 로그인이 가능합니다.</p>
                     </div>
                     <button type="submit" class="main-btn">채팅 화면으로 이동</button>
                 </form>
@@ -138,10 +138,25 @@
 
                 <form id="client-form" class="hidden" onsubmit="handleSignup(event, 'client')">
                     <div class="form-group">
+                        <label>로그인 ID (이메일)</label>
+                        <div class="input-group">
+                            <i class="fa-solid fa-envelope"></i>
+                            <input type="email" class="email-input input-control" placeholder="example@mindway.com" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>비밀번호</label>
+                        <div class="input-group">
+                            <i class="fa-solid fa-lock"></i>
+                            <input type="password" class="pwd-input input-control" placeholder="비밀번호를 입력하세요" required>
+                            <i class="fa-regular fa-eye-slash eye-icon" onclick="togglePassword(null, this)"></i>
+                        </div>
+                    </div>
+                    <div class="form-group">
                         <label>연락처</label>
                         <div class="input-group">
                             <i class="fa-solid fa-phone"></i>
-                            <input type="tel" class="phone-input input-control" placeholder="010-0000-0000" required>
+                            <input type="tel" class="phone-input input-control" placeholder="010-0000-0000">
                         </div>
                     </div>
                     <div class="form-group">
@@ -150,9 +165,6 @@
                             <i class="fa-regular fa-user"></i>
                             <input type="text" class="name-input input-control" placeholder="성함을 입력하세요" required>
                         </div>
-                    </div>
-                    <div class="info-box">
-                        <p>💡 안내: 내담자는 '등록'만 진행합니다. (비밀번호 없음 / 상담사 로그인 후 관리)</p>
                     </div>
                     <button type="submit" class="main-btn">내담자 등록 완료</button>
                 </form>
@@ -204,8 +216,10 @@
                 data.email = form.querySelector('.email-input').value;
                 data.pwd = form.querySelector('.pwd-input').value;
             } else {
+                data.email = form.querySelector('.email-input').value;
+                data.pwd = form.querySelector('.pwd-input').value;
                 const rawPhone = form.querySelector('.phone-input').value;
-                data.phone = rawPhone.replace(/[^0-9]/g, '');
+                data.phone = rawPhone ? rawPhone.replace(/[^0-9]/g, '') : '';
             }
 
             try {
@@ -217,7 +231,11 @@
 
                 const result = await response.json();
                 if (response.ok) {
-                    alert(`${data.name}님, 등록이 완료되었습니다.`);
+                    if (role === 'client') {
+                        alert(data.name + ' 회원가입 완료');
+                    } else {
+                        alert(`${data.name}님, 등록이 완료되었습니다.`);
+                    }
                     toggleView('login');
                 } else {
                     alert('등록 실패: ' + (result.detail || '오류 발생'));
@@ -227,7 +245,7 @@
             }
         }
 
-        // ✅ 상담사 로그인 성공 시 대시보드로 이동
+        // ✅ 상담사 로그인 성공 시 Main.html로 이동
         async function handleLogin(event) {
             event.preventDefault();
             const email = document.getElementById('loginId').value;
@@ -244,10 +262,13 @@
                 if (response.ok) {
                     alert(`${result.counselor_name || '상담사'}님, 환영합니다!`);
 
-                    // ✅ 여기 추가: 대시보드로 이동(상담사 식별값 전달)
+                    // ★ localStorage 저장: Chat_counselor.html에서 counselor_id/name 읽기 위해
+                    localStorage.setItem('counselor_id', result.counselor_id);
+                    localStorage.setItem('counselor_name', result.counselor_name || '');
+
                     const cid = encodeURIComponent(result.counselor_id);
                     const cname = encodeURIComponent(result.counselor_name || '');
-                    location.href = `dashboard.html?counselor_id=${cid}&counselor_name=${cname}`;
+                    location.href = `Main.html?role=counselor&counselor_id=${cid}&counselor_name=${cname}`;
                 } else {
                     alert('로그인 실패: ' + (result.detail || '오류 발생'));
                 }
@@ -258,22 +279,26 @@
 
         async function handleClientLogin(event) {
             event.preventDefault();
-            const rawPhone = document.getElementById('clientPhone').value;
-            const code = document.getElementById('clientCode').value;
-
-            const phone = rawPhone.replace(/[^0-9]/g, '');
+            const email = document.getElementById('clientEmail').value;
+            const pwd = document.getElementById('clientPwd').value;
 
             try {
                 const response = await fetch(`${API_BASE_URL}/client/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone: phone, code: code })
+                    body: JSON.stringify({ email: email, pwd: pwd })
                 });
 
                 const result = await response.json();
                 if (response.ok) {
-                    alert(`${result.client_name || '내담자'}님, 채팅 화면으로 이동합니다.`);
-                    location.href = `chat.html?role=client&client_id=${encodeURIComponent(result.client_id)}&client_name=${encodeURIComponent(result.client_name)}`;
+                    const name = result.client_name || '내담자';
+                    alert(name + ' 성공');
+
+                    // ★ localStorage 저장: Chat_client.html에서 client_id/name 읽기 위해
+                    localStorage.setItem('client_id', result.client_id);
+                    localStorage.setItem('client_name', result.client_name || '');
+
+                    location.href = `Chat_client.html?role=client&client_id=${encodeURIComponent(result.client_id)}&client_name=${encodeURIComponent(result.client_name)}`;
                 } else {
                     alert('로그인 실패: ' + (result.detail || '오류 발생'));
                 }
