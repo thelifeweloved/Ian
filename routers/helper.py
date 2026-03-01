@@ -223,7 +223,7 @@ def rule_check(text: str) -> Dict[str, Any]:
 def _call_hcx(
     messages: List[Dict[str, str]],
     temperature: float = 0.2,
-    max_tokens: int = 280,
+    max_tokens: int = 800,
 ) -> Optional[str]:
     """
     HyperCLOVA X API를 호출하고 응답 content를 반환한다.
@@ -280,19 +280,30 @@ def _extract_json(raw: Optional[str]) -> Optional[Dict[str, Any]]:
     if not raw:
         return None
 
+    # 코드펜스 제거
     text = re.sub(r"```[a-zA-Z]*", "", str(raw)).replace("```", "").strip()
 
+    # 전체 파싱 시도
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
+    # 중괄호 범위 추출 후 파싱
     m = re.search(r"\{[\s\S]*\}", text)
     if m:
         try:
             return json.loads(m.group(0))
         except json.JSONDecodeError:
             pass
+
+    # 잘린 JSON 복구 시도: 마지막 완전한 } 위치까지만 파싱
+    try:
+        last_brace = text.rfind("}")
+        if last_brace > 0:
+            return json.loads(text[:last_brace + 1])
+    except json.JSONDecodeError:
+        pass
 
     return None
 
