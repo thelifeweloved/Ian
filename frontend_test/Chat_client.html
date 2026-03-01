@@ -340,7 +340,7 @@
                 const res = await fetch(`${API_BASE_URL}/sessions/${windowSessId}/messages?limit=100`);
                 const data = await res.json();
                 const msgs = data.items || [];
-                if (msgs.length > lastMsgCount) { renderMessages(msgs.reverse()); lastMsgCount = msgs.length; }
+                if (msgs.length > lastMsgCount) { renderMessages(msgs); lastMsgCount = msgs.length; }
             } catch (e) { } finally { isPolling = false; }
         }
 

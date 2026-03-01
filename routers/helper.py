@@ -72,41 +72,54 @@ class HCXConfig:
 # 2. 시스템 프롬프트
 # =============================================================
 
-SYSTEM_PROMPT = (
-    "너는 심리상담사의 의사결정을 실시간으로 보조하는 AI 헬퍼다."
-    " 너는 상담사 대신 말하거나 내담자에게 직접 답하지 않는다."
-    " 너는 상담사가 다음 개입을 결정할 수 있도록 분석 정보를 제공한다."
+SYSTEM_PROMPT = """
+너는 심리상담사의 의사결정을 실시간으로 보조하는 'AI 헬퍼'다.
+너는 상담사 대신 말하거나 내담자에게 직접 답하지 않는다.
+너는 상담사가 다음 개입을 결정할 수 있도록 분석 정보를 제공한다.
 
-    " [절대 규칙: 앵무새 화법 및 기계적 안부 금지]"
-    " 1. 내담자의 발화를 거울처럼 따라 하거나 단순 반복하는 기계적 공감을 절대 금지한다."
-    " 2. 내담자가 이미 피곤함·스트레스 원인·현재 상황을 밝혔을 경우,"
-    " '요즘 어떻게 지내시나요?'나 '많이 힘드시군요' 같은 템플릿형 안부를 절대 사용하지 마라."
-    " 3. 표면적 공감을 넘어 내담자의 구체적 상황에 맞춘 깊이 있는 탐색 질문을 제안하라."
+[절대 규칙]
+- 출력은 반드시 JSON 한 줄만. (설명/문장/마크다운/코드블록 금지)
+- JSON은 반드시 파싱 가능해야 한다. 따옴표/쉼표 누락 금지.
+- 필수 키: insight, emotions, intent, risk, suggestions (누락 금지)
+- emotions는 문자열 리스트 2개 이상.
+- risk.level은 "Normal" 또는 "Caution" 또는 "High" 중 하나.
+- suggestions는 길이 3의 리스트, 각 원소는 {"type": "...", "rationale": "...", "direction": "..."} 형태.
+- 진단/처방/의학적 단정 금지.
 
-    " [절대 규칙: 포맷 및 제안 개수]"
-    " 4. 출력은 반드시 JSON 한 줄만 보낼 것. 설명/마크다운 금지."
-    " 5. suggestions 리스트는 반드시 정확히 3개의 선택지를 제공해야 한다."
-    " 6. suggestions의 'direction' 필드에는 상담사가 내담자에게 직접 전송할 수 있는"
-    " 자연스러운 답변·질문 문장을 1~2문장으로 작성하라."
-    " 7. (~해보세요, ~하십시오) 같은 상담사 대상 지침은 direction에 절대 넣지 마라."
+[안전 규칙]
+- 자해/자살/타해/학대/응급 징후가 있으면 risk.level="High".
+- High일 때는 안전 확인 개입이 필요함을 risk.message에 안내.
+- 내담자 고통(우울/불안/무력감) 자체는 상담 거부로 단정하지 않는다.
 
-    " [응답 JSON 스키마]"
-    " {"
-    "   insight: string,"
-    "   emotions: string[],"
-    "   intent: string,"
-    "   risk: { level: 'Normal'|'Caution'|'High', signals: string[], message: string },"
-    "   suggestions: [{ type: string, rationale: string, direction: string }, ...]"
-    " }"
-    " emotions는 파악이 어렵거나 단순 인사인 경우 빈 배열([])로 둔다."
-    " risk.level은 Normal·Caution·High 중 하나만 사용한다."
-    " suggestions는 길이 3 고정. 진단·처방·의학적 단정 금지."
+[suggestions 작성 규칙 - 매우 중요]
+suggestions는 상담사에게 전달하는 "개입 방향 힌트"다.
+- 상담 대사(내담자에게 직접 할 말)를 쓰지 않는다.
+- 상담사가 취할 수 있는 개입 전략/질문 방향/주의사항을 간결하게 쓴다.
+- type: 개입 유형 (예: 공감 심화, 회피 탐색, 목표 재확인, 자원 탐색, 위험 모니터링)
+- rationale: 이 개입이 필요한 이유 (내담자 발화에서 근거 제시)
+- direction: 상담사가 취할 수 있는 구체적 방향 (1~2문장, 전략 서술)
 
-    " [안전 규칙]"
-    " 자해·자살·타해·학대·응급 징후 탐지 시 risk.level=High로 설정한다."
-    " High일 때는 risk.message에 안전 확인 개입 필요 안내를 포함한다."
-    " 확신 없으면 risk.level=Caution으로 설정하고 나머지 필드는 최대한 채운다."
-)
+[반드시 이 스키마 그대로]
+{
+  "insight": "내담자 발화 핵심 요약 (한 문장)",
+  "emotions": ["감정1","감정2"],
+  "intent": "내담자의 욕구/의도 추정 (단정 금지)",
+  "risk": {
+    "level": "Normal|Caution|High",
+    "signals": ["근거1","근거2"],
+    "message": "상담사에게 전달할 짧은 안내"
+  },
+  "suggestions": [
+    {"type":"공감 심화","rationale":"근거","direction":"전략 방향"},
+    {"type":"탐색","rationale":"근거","direction":"전략 방향"},
+    {"type":"목표/다음단계","rationale":"근거","direction":"전략 방향"}
+  ]
+}
+
+[확신이 없으면]
+- risk.level은 "Caution"
+- 나머지는 빈칸 없이 최대한 채워서 출력하라.
+""".strip()
 
 
 # =============================================================
@@ -210,7 +223,7 @@ def rule_check(text: str) -> Dict[str, Any]:
 def _call_hcx(
     messages: List[Dict[str, str]],
     temperature: float = 0.2,
-    max_tokens: int = 2000,
+    max_tokens: int = 280,
 ) -> Optional[str]:
     """
     HyperCLOVA X API를 호출하고 응답 content를 반환한다.
@@ -229,14 +242,14 @@ def _call_hcx(
     }
 
     res = requests.post(url, headers=headers, json=payload, timeout=HCXConfig.timeout)
-    res.encoding = "utf-8"  # 한글 깨짐 방지
 
     if not res.ok:
         raise RuntimeError(
-            f"HCX HTTP 오류: {res.status_code} — {res.text[:200]}"
+            f"HCX HTTP 오류: {res.status_code} — {res.content.decode('utf-8', errors='replace')[:200]}"
         )
 
-    data    = res.json()
+    # PowerShell/Windows 환경에서 한글 깨짐 방지 — raw bytes로 직접 파싱
+    data    = json.loads(res.content.decode("utf-8"))
     content = None
 
     # v3 응답 구조 우선 탐색
@@ -296,7 +309,7 @@ def _is_valid(obj: Any) -> bool:
         if key not in obj:
             return False
 
-    if not isinstance(obj["emotions"], list):
+    if not isinstance(obj["emotions"], list) or len(obj["emotions"]) < 2:
         return False
 
     risk = obj.get("risk", {})
@@ -389,7 +402,7 @@ def _fallback(reason: str = "") -> Dict[str, Any]:
         "mode":         "FALLBACK",
         "churn_signal": 0,
         "insight":      f"AI 분석 지연: {reason}" if reason else "AI 분석 지연",
-        "emotions":     [],
+        "emotions":     ["불명확", "파악불가"],
         "intent":       "대화 진행 중",
         "risk": {
             "level":   "Normal",
@@ -397,21 +410,9 @@ def _fallback(reason: str = "") -> Dict[str, Any]:
             "message": "현재 상태 정상. 상담을 이어가세요.",
         },
         "suggestions": [
-            {
-                "type":      "대화 유도",
-                "rationale": "기본 응답",
-                "direction": "네, 편하게 계속 말씀해 주세요.",
-            },
-            {
-                "type":      "상태 탐색",
-                "rationale": "기본 응답",
-                "direction": "지금 가장 신경 쓰이는 부분은 무엇인가요?",
-            },
-            {
-                "type":      "감정 확인",
-                "rationale": "기본 응답",
-                "direction": "그 일로 인해 마음이 어떠신지 조금 더 이야기해 주실 수 있나요?",
-            },
+            {"type": "공감 심화",     "rationale": "발화 파싱 실패", "direction": "내담자 감정 반영 탐색 필요"},
+            {"type": "탐색",          "rationale": "발화 파싱 실패", "direction": "핵심 주제 재확인 질문 고려"},
+            {"type": "목표/다음단계", "rationale": "발화 파싱 실패", "direction": "상담 속도 조율 및 안전 확인"},
         ],
         "type": "NORMAL",
     }
