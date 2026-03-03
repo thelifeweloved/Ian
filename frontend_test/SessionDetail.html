@@ -6,7 +6,6 @@
     <title>세션 리포트 - MindWay</title>
     
     <script src="./config.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -156,6 +155,7 @@
             .report-section { break-inside: avoid; }
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
     <div class="report-container" id="reportContent">
@@ -188,9 +188,9 @@
         <section class="report-section">
             <h3>감정 및 발화 지표 스코어</h3>
             <div class="metrics-grid" id="metricsGrid">
-                <div class="metric-card"><div class="metric-label">감정 스코어</div><div class="metric-value">—</div></div>
-                <div class="metric-card"><div class="metric-label">발화량 지수</div><div class="metric-value">—</div></div>
-                <div class="metric-card"><div class="metric-label">반응 지연도</div><div class="metric-value">—</div></div>
+                <div class="metric-card"><div class="metric-label">종합 품질 점수</div><div class="metric-value" id="metricScore">—</div></div>
+                <div class="metric-card"><div class="metric-label">상담 흐름 점수</div><div class="metric-value" id="metricFlow">—</div></div>
+                <div class="metric-card"><div class="metric-label">이탈 위험도</div><div class="metric-value" id="metricRisk">—</div></div>
             </div>
         </section>
 
@@ -204,7 +204,7 @@
 
         <section class="report-section">
             <h3>AI 분석 요약 및 상담 참고자료</h3>
-            <div class="ai-summary-box" id="aiSummary">해당 세션의 AI 분석 요약이 없습니다. (추후 DB 연동 시 sess_analysis.summary 등에서 조회)</div>
+            <div class="ai-summary-box" id="aiSummary" style="color:#aab0be;">HCX 분석 완료 후 요약이 표시됩니다.</div>
         </section>
 
         <section class="report-section">
@@ -258,7 +258,12 @@
 
                 // 헤더 업데이트
                 document.getElementById('reportMeta').textContent = `세션 ID: S-${sessId} | 생성일: ${new Date(dash.session?.start_at || Date.now()).toLocaleString('ko-KR')}`;
-                document.getElementById('reportStage').innerHTML = `상담 단계: <strong>${dash.session?.stage || '—'}</strong>`;
+                const stageLabel = dash.session?.stage ||
+                    (dash.session?.progress === 'ACTIVE' ? '진행 중' :
+                     dash.session?.end_reason === 'DROPOUT' ? '이탈 종료' :
+                     dash.session?.end_reason === 'NORMAL'  ? '정상 종료' :
+                     dash.session?.progress === 'CLOSED'    ? '종료' : '—');
+                document.getElementById('reportStage').innerHTML = `상담 단계: <strong>${stageLabel}</strong>`;
                 
                 // 만족도 배지 업데이트
                 const satBadge = document.getElementById('satBadge');
@@ -277,15 +282,25 @@
                 // 스코어 카드 업데이트
                 const quality = dash.quality || {};
                 document.getElementById('metricsGrid').innerHTML = `
-                    <div class="metric-card"><div class="metric-label">감정 스코어</div><div class="metric-value">${quality.score?.toFixed(2) || '—'}</div></div>
-                    <div class="metric-card"><div class="metric-label">발화량 지수</div><div class="metric-value">${quality.flow?.toFixed(0) || '—'}</div></div>
-                    <div class="metric-card"><div class="metric-label">반응 지연도</div><div class="metric-value">${(quality.churn_prob)?.toFixed(2) || '—'}</div></div>
+                    <div class="metric-card"><div class="metric-label">종합 품질 점수</div><div class="metric-value">${quality.score?.toFixed(1) || '—'}</div></div>
+                    <div class="metric-card"><div class="metric-label">상담 흐름 점수</div><div class="metric-value">${quality.flow?.toFixed(1) || '—'}</div></div>
+                    <div class="metric-card"><div class="metric-label">이탈 위험도</div><div class="metric-value">${quality.churn_prob != null ? (quality.churn_prob).toFixed(2) : '—'}</div></div>
                 `;
 
                 // 토픽 및 키워드 업데이트
-                const topic = dash.topic_analysis?.[0] || {};
+                // topic_analysis: 여러 토픽이 있으면 가장 최신(첫 번째) 사용
+                const topicList = dash.topic_analysis || [];
+                const topic = topicList[0] || {};
+                // 여러 토픽명이 있으면 모두 표시
+                if (topicList.length > 1) {
+                    const allTopicNames = topicList.map(t => t.topic_name).filter(Boolean).join(' · ');
+                    document.getElementById('topicText').textContent = allTopicNames || '—';
+                }
                 document.getElementById('topicText').textContent = topic.topic_name || '진행 중인 세션';
-                document.getElementById('keywordTags').innerHTML = (topic.keywords || []).map(kw => `<span class="tag">${kw}</span>`).join('');
+                // keywords: main.py에서 내려주면 사용, 없으면 topic_name으로 대체
+                const keywords = topic.keywords?.length ? topic.keywords
+                    : topic.topic_name ? [topic.topic_name] : [];
+                document.getElementById('keywordTags').innerHTML = keywords.map(kw => `<span class="tag">${kw}</span>`).join('') || '<span style="color:#aab0be;font-size:0.85rem;">HCX 분석 후 표시됩니다</span>';
 
                 // AI 요약
                 if(topic.summary) {
@@ -354,9 +369,8 @@
             }
         });
 
+        // PDF 다운로드 기능
         document.getElementById('btnDownload').addEventListener('click', function() {
-            // 버튼이 포함된 action-bar를 제외하고 리포트 내용만 담기 위해 범위를 조정할 수도 있지만,
-            // 사용자님의 기존 방식대로 reportContent 전체를 캡처합니다.
             const element = document.getElementById('reportContent'); 
             const opt = {
                 margin:       10,
@@ -365,8 +379,6 @@
                 html2canvas:  { scale: 2, useCORS: true }, 
                 jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
             };
-
-            // 라이브러리 실행
             html2pdf().set(opt).from(element).save();
         });
 

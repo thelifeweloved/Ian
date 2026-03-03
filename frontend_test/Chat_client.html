@@ -4,17 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MindWay - 실시간 상담 (내담자)</title>
-    <script src="./config.js"></script>
+    <script src="config.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,400&display=swap" rel="stylesheet">
     <style>
-        
+        /* 기존 스타일 유지 (생략 없음) */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; }
         body { display: flex; background: #f0f2f5; height: 100vh; overflow: hidden; }
-
-        /* 사이드바 */
         .sidebar { width: 280px; background: #373f50; color: white; display: flex; flex-direction: column; padding: 40px 20px; flex-shrink: 0; transition: width 0.25s ease, padding 0.25s ease; position: relative; box-shadow: 4px 0 24px rgba(0,0,0,0.06); }
         .sidebar.collapsed { width: 72px; padding: 40px 12px; }
         .sidebar.collapsed .sidebar-header-inner .brand-name, 
@@ -51,8 +49,6 @@
         .settings-btn:hover { color: white; }
         .logout-btn { margin-top: 0; color: #ff9a9a; display: flex; align-items: center; gap: 10px; padding: 15px; text-decoration: none; font-weight: 500; }
         .logout-btn:hover { color: #ffb3b3; }
-
-        /* 채팅 레이아웃 */
         .chat-layout { flex: 1; min-width: 0; display: flex; overflow: hidden; }
         .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #eef0f3; border-radius: 20px 0 0 0; box-shadow: -8px 0 32px rgba(0,0,0,0.04); overflow: hidden; }
         .chat-header { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 18px 28px; background: #fff; border-bottom: 1px solid #e8eaef; }
@@ -62,14 +58,11 @@
         .chat-header-left .title-wrap .session-id { font-size: 0.8rem; color: #8b92a0; margin-top: 2px; }
         .btn-end-session { width: 48px; height: 48px; padding: 0; border: none; border-radius: 12px; background: #fff5f5; color: #c62828; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
         .btn-end-session:hover { background: #ffebee; color: #b71c1c; }
-        
         .chat-messages { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; background: #eef0f3; -webkit-overflow-scrolling: touch; }
         .chat-msg { display: flex; max-width: 52%; animation: msgIn 0.3s ease; }
         @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        
         .chat-msg.msg-me { align-self: flex-end; }
         .chat-msg.msg-other { align-self: flex-start; }
-        
         .chat-msg .bubble { padding: 10px 14px; border-radius: 12px; font-size: 0.85rem; line-height: 1.48; word-break: break-word; background: #fff; color: #1a1a1a; border: 1px solid #e8eaef; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
         .chat-msg.msg-me .bubble { border-left: 4px solid #E5C76B; } 
         .chat-msg .who { font-size: 0.7rem; font-weight: 600; margin-bottom: 3px; opacity: 0.85; }
@@ -78,8 +71,6 @@
         .chat-msg .time { font-size: 0.65rem; margin-top: 4px; opacity: 0.7; }
         .chat-msg.msg-me .time { color: #555; }
         .chat-msg.msg-other .time { color: #888; }
-        
-        /* 하단 입력부 */
         .chat-input-area { flex-shrink: 0; padding: 20px 28px 28px; background: #fff; border-top: 1px solid #e8eaef; }
         .chat-input-row { display: flex; gap: 12px; align-items: flex-end; }
         .chat-input-row textarea { flex: 1; min-height: 52px; max-height: 140px; padding: 14px 18px; background: #f0f2f5; border: 1px solid #dce0e6; border-radius: 14px; font-size: 0.95rem; resize: none; outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
@@ -89,8 +80,6 @@
         .chat-input-row .btn-icon { flex-shrink: 0; width: 44px; height: 44px; border: 2px solid #2a2d32; border-radius: 12px; background: #fff; color: #6b7080; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: all 0.2s; }
         .chat-input-row .btn-icon:hover { background: #f5f5f5; color: #555; }
         .chat-input-row .btn-icon.on { background: #E5C76B; color: #1a1a1a; border-color: #E5C76B; }
-
-        /* 모달 및 기타 */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; }
         .modal-overlay.show { display: flex; }
         .modal-box { background: #fff; border-radius: 16px; padding: 28px; max-width: 380px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); text-align: center; }
@@ -111,7 +100,6 @@
         .modal-one-line-wrap label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 8px; }
         .modal-one-line-input { width: 100%; padding: 12px 14px; border: 1px solid #dce0e6; border-radius: 10px; font-size: 0.95rem; outline: none; box-sizing: border-box; }
         .modal-one-line-input:focus { border-color: #E5C76B; }
-
         .source-select-box { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
         .source-btn { display: flex; align-items: center; gap: 14px; padding: 16px 20px; border: 2px solid #e8eaef; border-radius: 12px; background: #fafbfc; cursor: pointer; transition: all 0.2s; text-align: left; width: 100%; }
         .source-btn:hover { border-color: #7389f4; background: #f0f2ff; }
@@ -120,14 +108,12 @@
         .source-btn.file-btn .src-icon { background: #e6f9f0; color: #1a7f5a; }
         .source-btn .src-title { font-size: 0.95rem; font-weight: 700; color: #222; margin-bottom: 2px; }
         .source-btn .src-sub { font-size: 0.78rem; color: #999; }
-
         .chat-right-panel { width: 340px; flex-shrink: 0; background: #fff; border-left: 1px solid #e8eaef; display: flex; flex-direction: column; overflow: hidden; box-shadow: -4px 0 24px rgba(0,0,0,0.04); }
         .panel-section { padding: 20px; border-bottom: 1px solid #f0f1f5; }
         .panel-title { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; color: #8b92a0; margin-bottom: 12px; }
         .video-end-wrap { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
         .btn-video-end { width: 100%; padding: 8px 12px; border: none; border-radius: 8px; background: #1a237e; color: #fff; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: background 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
         .btn-video-end:hover { background: #283593; }
-
         .live-feed-wrap { background: #0d0e10; border-radius: 12px; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; border: 1px solid #2a2d32; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03), inset 0 2px 20px rgba(0,0,0,0.5), 0 4px 20px rgba(0,0,0,0.15); }
         .live-feed-wrap .placeholder { color: #6b7080; font-size: 0.9rem; font-weight: 500; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center; }
         .live-feed-wrap .placeholder .icon-wrap { width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; }
@@ -136,25 +122,28 @@
         .live-feed-wrap .badge-live { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); color: #fff; font-size: 0.65rem; font-weight: 700; padding: 6px 12px; border-radius: 6px; letter-spacing: 0.08em; display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.1); }
         .live-feed-wrap .badge-live .dot { width: 6px; height: 6px; border-radius: 50%; background: #f44336; animation: livePulse 1.5s ease-in-out infinite; }
         @keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(0.9); } }
-
         @media (max-width: 1024px) { .chat-right-panel { width: 280px; } }
         @media (max-width: 768px) { .chat-right-panel { display: none; } .chat-main { border-radius: 0; } }
-
         .chat-msg .bubble img { max-width: 100%; max-height: 300px; border-radius: 8px; margin-top: 8px; display: block; cursor: pointer; }
-        .btn-modal-close {
-            position: absolute;
-            top: 16px;
-            right: 18px;
-            background: none;
-            border: none;
-            font-size: 1.2rem;
-            color: #999;
-            cursor: pointer;
-            transition: color 0.2s;
-        }
-        .btn-modal-close:hover {
-            color: #333;
-        }
+
+        /* ── 고민 유형 선택 모달 ── */
+        .topic-modal-overlay { z-index: 1100; }
+        .topic-modal-box { background: #fff; border-radius: 20px; padding: 32px 28px 28px; max-width: 480px; width: 94%; box-shadow: 0 24px 64px rgba(0,0,0,0.18); position: relative; max-height: 90vh; overflow-y: auto; }
+        .topic-modal-close { position: absolute; top: 14px; right: 16px; background: none; border: none; font-size: 1.1rem; color: #aab0be; cursor: pointer; transition: color 0.2s; }
+        .topic-modal-close:hover { color: #555; }
+        .topic-modal-title { font-size: 1.2rem; font-weight: 700; color: #373f50; margin-bottom: 6px; }
+        .topic-modal-intro { font-size: 0.92rem; color: #555; margin-bottom: 4px; }
+        .topic-modal-desc { font-size: 0.82rem; color: #aab0be; margin-bottom: 10px; }
+        .topic-selected-count { font-size: 0.82rem; font-weight: 600; color: #7389f4; margin-bottom: 14px; }
+        .topic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+        .topic-chip { padding: 10px 8px; border: 2px solid #e8eaef; border-radius: 12px; background: #fafbfc; font-size: 0.82rem; font-weight: 600; color: #555; cursor: pointer; text-align: center; transition: all 0.15s; user-select: none; }
+        .topic-chip:hover { border-color: #7389f4; background: #f0f2ff; color: #7389f4; }
+        .topic-chip.selected { border-color: #7389f4; background: #7389f4; color: #fff; }
+        .topic-chip.disabled { opacity: 0.4; cursor: not-allowed; }
+        .topic-modal-complete { width: 100%; padding: 13px; border: none; border-radius: 12px; background: #7389f4; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity 0.2s; }
+        .topic-modal-complete:disabled { opacity: 0.4; cursor: not-allowed; }
+        .topic-modal-complete:not(:disabled):hover { opacity: 0.9; }
+        .topic-etc-modal .modal-etc-title { font-size: 0.95rem; font-weight: 600; color: #373f50; margin-bottom: 12px; }
     </style>
 </head>
 
@@ -179,7 +168,7 @@
                 <span class="nav-item-text">내담자 상담</span>
                 <i class="fa-solid fa-chevron-down"></i>
             </a>
-            </nav>
+        </nav>
         <a href="#" class="settings-btn"><i class="fa-solid fa-gear"></i><span class="btn-text"> Settings</span></a>
         <a href="Login.html" class="logout-btn" onclick="localStorage.clear();"><i class="fa-solid fa-arrow-right-from-bracket"></i><span class="btn-text"> Logout Account</span></a>
     </aside>
@@ -245,28 +234,57 @@
             <input type="file" id="imageFileInput" accept="image/*" style="display:none;">
             <input type="file" id="videoFileInput" accept="video/*" style="display:none;">
 
-            <<div class="modal-overlay" id="endSessionModal">
-                <div class="modal-box" style="position: relative;">
-                    <button type="button" class="btn-modal-close" id="endSessionCloseX" title="평가 건너뛰기"><i class="fa-solid fa-xmark"></i></button>
-                    
-                    <div class="modal-title">만족도 조사</div>
-                    <div class="modal-text">상담 종료시 품질향상을 위해 만족도 조사를 해주세요.</div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn-satisfy" id="endSessionSatisfy">만족</button>
-                        <button type="button" class="btn-dissatisfy" id="endSessionDissatisfy">불만족</button>
-                        </div>
+            <!-- 고민 유형 선택 팝업 (채팅 입장 시 표시) -->
+            <div class="modal-overlay topic-modal-overlay" id="topicSelectModal">
+                <div class="topic-modal-box">
+                    <button type="button" class="topic-modal-close" id="topicModalClose" title="닫기" aria-label="닫기"><i class="fa-solid fa-xmark"></i></button>
+                    <h2 class="topic-modal-title">주요 고민 유형 선택</h2>
+                    <p class="topic-modal-intro">어떤 고민으로 상담을 신청하시나요?</p>
+                    <p class="topic-modal-desc">상담 준비를 위해 주요 고민 유형을 1~3개 선택해주세요.</p>
+                    <p class="topic-selected-count" id="topicSelectedCount">0개 선택됨 (최대 3개)</p>
+                    <div class="topic-grid" id="topicSelectGrid"></div>
+                    <button type="button" class="topic-modal-complete" id="topicModalComplete" disabled>완료</button>
                 </div>
             </div>
-            
-            <div class="modal-overlay" id="thankYouModal">
-                <div class="modal-box modal-box-simple">
-                    <div class="modal-text-only">상담에 응해주셔서 감사합니다.</div>
-                    <div class="modal-one-line-wrap">
-                        <label for="thankYouOneLine">한줄평</label>
-                        <input type="text" class="modal-one-line-input" id="thankYouOneLine" placeholder="한줄평을 입력해 주세요." maxlength="200">
+            <div class="modal-overlay topic-etc-modal" id="topicEtcModal">
+                <div class="modal-box">
+                    <p class="modal-etc-title">기타 주요 고민 유형 내용을 적어주세요.</p>
+                    <textarea class="modal-one-line-input" id="topicEtcInput" placeholder="고민 유형을 입력해 주세요." maxlength="500" rows="4" style="resize:vertical;"></textarea>
+                    <div class="modal-actions" style="margin-top:14px;">
+                        <button type="button" class="btn-confirm" id="topicEtcConfirm">확인</button>
+                        <button type="button" class="btn-cancel" id="topicEtcCancel">취소</button>
                     </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn-confirm" id="thankYouSaveConfirm">저장 및 확인</button>
+                </div>
+            </div>
+
+            <!-- 상담 종료 모달: 만족도 + 한줄평 통합 -->
+            <div class="modal-overlay" id="endSessionModal">
+                <div class="modal-box">
+                    <div class="modal-title">상담이 종료됩니다</div>
+                    <div class="modal-text">이번 상담은 어떠셨나요?</div>
+
+                    <!-- 만족도 선택 -->
+                    <div style="display:flex; gap:12px; justify-content:center; margin-bottom:20px;">
+                        <button type="button" id="endSessionSatisfy"
+                            style="flex:1; padding:12px; border-radius:10px; border:2px solid #e0e4f0; background:#fff; font-size:1.3rem; cursor:pointer; transition:all 0.15s;"
+                            onclick="selectSat(1, this)">😊 만족</button>
+                        <button type="button" id="endSessionDissatisfy"
+                            style="flex:1; padding:12px; border-radius:10px; border:2px solid #e0e4f0; background:#fff; font-size:1.3rem; cursor:pointer; transition:all 0.15s;"
+                            onclick="selectSat(0, this)">😞 불만족</button>
+                    </div>
+
+                    <!-- 한줄평 -->
+                    <div class="modal-one-line-wrap">
+                        <label for="thankYouOneLine" style="font-size:0.85rem; color:#555;">한줄평 <span style="color:#aab0be;">(선택)</span></label>
+                        <input type="text" class="modal-one-line-input" id="thankYouOneLine"
+                            placeholder="상담에 대한 짧은 의견을 남겨주세요." maxlength="200">
+                    </div>
+
+                    <div class="modal-actions" style="flex-direction:column; gap:8px;">
+                        <button type="button" class="btn-confirm" id="endSessionConfirm"
+                            style="width:100%; opacity:0.5; cursor:not-allowed;" disabled>확인</button>
+                        <button type="button" class="btn-cancel" id="endSessionCancel"
+                            style="width:100%;">취소</button>
                     </div>
                 </div>
             </div>
@@ -291,91 +309,48 @@
     </div>
 
     <script>
-        const ANALYZE_URL = 'http://127.0.0.1:8001/analyze';
+        /* [중요] config.js에서 정의된 API_BASE_URL을 사용합니다. 
+           만약 ReferenceError가 발생한다면 config.js 로드 여부를 확인하세요. */
+        
+        const ANALYZE_URL = 'http://127.0.0.1:8001/analyze'; 
+        const clientId = localStorage.getItem('client_id') || 1; 
+        const counselorId = localStorage.getItem('counselor_id') || 1; 
+        const clientName = localStorage.getItem('client_name') || '내담자';
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const clientId = urlParams.get('client_id') || localStorage.getItem('client_id') || 1;
-        
-        // ★ 오류 해결 1: 캐시를 무시하고 주소창에 넘어온 실제 이름을 최우선으로 낚아챕니다.
-        let clientNameRaw = urlParams.get('client_name') || localStorage.getItem('client_name') || '내담자'; 
-        const clientName = decodeURIComponent(clientNameRaw); // 깨진 글자 복원
-        
         let windowSessId = null;
         let lastMsgCount = 0;
         let isPolling = false;
 
-        // ★ 오류 해결 2: 화면에 진짜 존재하는 ID에만 이름을 안전하게 반영합니다.
-        const displayClientEl = document.getElementById('displayClientName');
-        if (displayClientEl) displayClientEl.innerText = clientName;
+        document.getElementById('displayClientName').innerText = clientName;
+        document.getElementById('headerClientName').innerText = clientName;
 
         const clientEmail = localStorage.getItem('client_email') || '이메일 정보 없음';
         const emailEl = document.getElementById('displayClientEmail');
         if (emailEl) emailEl.innerText = clientEmail;
 
+        document.getElementById('sidebarToggle').addEventListener('click', () => {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+        });
+
         async function initSession() {
+            // [체크] API_BASE_URL이 존재하지 않을 경우를 대비한 안전장치
+            const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+            
             try {
-                // 1. 내담자 본인의 예약 목록 조회
-                const apptRes = await fetch(`${API_BASE_URL}/appointments?client_id=${clientId}`);
-                const apptData = await apptRes.json();
-                const myAppts = apptData.items || [];
-                
-                // 2. 현재 활성화된(REQUESTED 또는 CONFIRMED) 예약 찾기
-                const activeAppt = myAppts.find(a => a.status === 'REQUESTED' || a.status === 'CONFIRMED');
-                
-                // 3. 만약 예약이 아예 없다면 -> 자동으로 예약 접수(POST)
-                if (!activeAppt) {
-                    const now = new Date();
-                    const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-                    
-                    await fetch(`${API_BASE_URL}/appointments`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            client_id: Number(clientId), 
-                            counselor_id: null, 
-                            at: timeStr 
-                        })
-                    });
-                    
-                    alert("상담 예약이 자동 접수되었습니다. 상담사가 배정될 때까지 대기해주세요.");
-                    document.getElementById('headerSessionId').innerText = "상담사 배정 대기 중...";
-                    
-                    setTimeout(() => location.reload(), 5000);
-                    return;
+                const res = await fetch(`${baseUrl}/client/start-session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ client_id: Number(clientId), counselor_id: Number(counselorId) })
+                });
+                const data = await res.json();
+                if (data.sess_id) {
+                    windowSessId = data.sess_id;
+                    document.getElementById('headerSessionId').innerText = `SESS-${data.sess_id} · 상담 진행 중`;
+                    setInterval(fetchMessages, 2000);
+                    startHeartbeat();  // heartbeat 시작
+                    loadAndShowTopicModal(); // 고민 유형 선택 모달 표시
                 }
-
-                // 4. 예약이 있지만 아직 상담사가 수락(CONFIRMED)하지 않은 경우 대기
-                if (activeAppt.status === 'REQUESTED') {
-                    document.getElementById('headerSessionId').innerText = "상담사 배정 대기 중...";
-                    setTimeout(() => location.reload(), 5000);
-                    return;
-                }
-
-                // 5. 상담사가 확정(CONFIRMED)한 경우 세션(채팅창) 연결 시작
-                if (activeAppt.status === 'CONFIRMED' && activeAppt.counselor_id) {
-                    const targetCounselorId = activeAppt.counselor_id;
-                    const targetCounselorName = activeAppt.counselor_name || "담당 상담사";
-                    
-                    // ★ 화면 상단 헤더에 상담사 이름 표시 
-                    const headerEl = document.getElementById('headerClientName');
-                    if (headerEl) headerEl.innerText = targetCounselorName;
-
-                    const res = await fetch(`${API_BASE_URL}/client/start-session`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ client_id: Number(clientId), counselor_id: Number(targetCounselorId) })
-                    });
-                    const data = await res.json();
-                    if (data.sess_id) {
-                        windowSessId = data.sess_id;
-                        document.getElementById('headerSessionId').innerText = `SESS-${data.sess_id} · 상담 진행 중`;
-                        setInterval(fetchMessages, 2000);
-                    }
-                }
-            } catch (e) { 
-                console.error("세션 연결 실패:", e);
-                alert("서버 연결에 실패했습니다.");
-            }
+            } catch (e) { console.error("세션 실패:", e); }
         }
 
         function renderMessages(msgs) {
@@ -389,7 +364,7 @@
                 
                 let content = m.text;
                 if (content && content.startsWith('data:image')) {
-                    content = `<img src="${content}" alt="전송 이미지">`;
+                    content = `<img src="${content}" alt="전송 이미지" onclick="window.open(this.src)">`;
                 }
                 
                 div.innerHTML = `<div class="bubble"><div class="who">${isMe ? '나' : '상담사'}</div>${content}<div class="time">${timeStr}</div></div>`;
@@ -401,8 +376,9 @@
         async function fetchMessages() {
             if(!windowSessId || isPolling) return;
             isPolling = true;
+            const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
             try {
-                const res = await fetch(`${API_BASE_URL}/sessions/${windowSessId}/messages?limit=100`);
+                const res = await fetch(`${baseUrl}/sessions/${windowSessId}/messages?limit=100`);
                 const data = await res.json();
                 const msgs = data.items || [];
                 if (msgs.length > lastMsgCount) { renderMessages(msgs); lastMsgCount = msgs.length; }
@@ -410,13 +386,14 @@
         }
 
         async function postMessage(payload) {
+            const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
             try {
-                await fetch(`${API_BASE_URL}/messages`, {
+                await fetch(`${baseUrl}/messages`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 fetchMessages();
-            } catch(e) {}
+            } catch(e) { console.error("메시지 전송 실패:", e); }
         }
 
         async function sendMessage() {
@@ -427,6 +404,7 @@
             await postMessage({ sess_id: Number(windowSessId), speaker: 'CLIENT', speaker_id: Number(clientId), text: text, stt_conf: 0.0 });
         }
 
+        // 이미지 버튼 로직
         document.getElementById('btnImage').addEventListener('click', () => document.getElementById('imageFileInput').click());
         document.getElementById('imageFileInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -440,14 +418,12 @@
             }
         });
 
-        let ws = null;
-        let videoFileObjectUrl = null;
-        let analysisTimer = null;
-
+        // 영상 로직
         const btnVideo = document.getElementById('btnVideo');
         const recordingModal = document.getElementById('recordingConsentModal');
         const sourceModal = document.getElementById('videoSourceModal');
         const localVideo = document.getElementById('localVideo');
+        let analysisTimer = null;
 
         btnVideo.addEventListener('click', () => {
             if (btnVideo.classList.contains('on')) stopVideo();
@@ -462,11 +438,6 @@
         document.getElementById('btnSelectWebcam').addEventListener('click', () => {
             sourceModal.classList.remove('show');
             navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-                if (videoFileObjectUrl) {
-                    URL.revokeObjectURL(videoFileObjectUrl);
-                    videoFileObjectUrl = null;
-                }
-                localVideo.src = '';
                 localVideo.srcObject = stream;
                 onVideoStart();
             });
@@ -479,133 +450,244 @@
 
         document.getElementById('videoFileInput').addEventListener('change', function() {
             if (this.files[0]) {
-                if (videoFileObjectUrl) {
-                    URL.revokeObjectURL(videoFileObjectUrl);
-                }
-                videoFileObjectUrl = URL.createObjectURL(this.files[0]);
-                localVideo.src = videoFileObjectUrl;
+                localVideo.src = URL.createObjectURL(this.files[0]);
                 localVideo.loop = true;
                 onVideoStart();
             }
-            this.value = ''; 
         });
 
         function onVideoStart() {
             localVideo.style.display = 'block';
             document.getElementById('videoPlaceholder').style.display = 'none';
             btnVideo.classList.add('on');
-            
-            localVideo.play().catch(() => {});
-
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`ws://127.0.0.1:8001/ws/analyze/${windowSessId}`);
-
-            ws.onerror = (error) => console.error("WebSocket 오류:", error);
-
-            analysisTimer = setInterval(analyzeFrame, 500);
+            analysisTimer = setInterval(analyzeFrame, 1000);
         }
 
         function stopVideo() {
-            if (videoFileObjectUrl) {
-                URL.revokeObjectURL(videoFileObjectUrl);
-                videoFileObjectUrl = null;
-            }
-            
             if (localVideo.srcObject) localVideo.srcObject.getTracks().forEach(t => t.stop());
-            localVideo.srcObject = null; 
-            localVideo.src = '';
+            localVideo.srcObject = null; localVideo.src = '';
             localVideo.style.display = 'none';
             document.getElementById('videoPlaceholder').style.display = 'flex';
             btnVideo.classList.remove('on');
-            
-            if (analysisTimer) clearInterval(analysisTimer);
-            
-            if (ws) {
-                ws.close();
-                ws = null;
-            }
+            clearInterval(analysisTimer);
         }
 
         async function analyzeFrame() {
-            if (!windowSessId || localVideo.style.display === 'none' || !ws || ws.readyState !== WebSocket.OPEN) return;
-            if (localVideo.readyState < 2) return; 
-
+            if (!windowSessId || localVideo.style.display === 'none') return;
             const canvas = document.createElement('canvas');
-            canvas.width = 320; 
-            canvas.height = 240;
+            canvas.width = 320; canvas.height = 240;
             canvas.getContext('2d').drawImage(localVideo, 0, 0, 320, 240);
-            
             const b64 = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
-            
             try {
-                const payload = {
-                    session_id: String(windowSessId),
-                    image_base64: 'data:image/jpeg;base64,' + b64,
-                    sess_db_id: windowSessId
-                };
-                ws.send(JSON.stringify(payload)); 
-            } catch (e) {
-                console.error("Frame send error:", e);
-            }
+                fetch(ANALYZE_URL, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: String(windowSessId), image_base64: 'data:image/jpeg;base64,' + b64, sess_db_id: windowSessId })
+                });
+            } catch (e) {}
         }
-        
+
         document.getElementById('btnSend').addEventListener('click', sendMessage);
         document.getElementById('messageInput').addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
         document.getElementById('btnVideoEnd').addEventListener('click', stopVideo);
+        
+        // ── 상담 종료 로직 ──
+        let _selectedSat = null;  // null / 0 / 1
 
-        // --- 수정된 만족도 조사 로직 적용 ---
-        let currentSatScore = null;
-
-        // 종료 버튼 클릭 시 모달 띄우기
+        // 종료 버튼 → 모달 열기
         document.querySelector('.btn-end-session').addEventListener('click', () => {
+            _selectedSat = null;
+            resetSatButtons();
             document.getElementById('endSessionModal').classList.add('show');
         });
 
-        // 만족/불만족 선택 시 한줄평 창으로 전환
-        document.getElementById('endSessionSatisfy').addEventListener('click', () => { 
-            currentSatScore = 1; 
-            document.getElementById('endSessionModal').classList.remove('show'); 
-            document.getElementById('thankYouModal').classList.add('show'); 
+        // 취소 버튼
+        document.getElementById('endSessionCancel').addEventListener('click', () => {
+            document.getElementById('endSessionModal').classList.remove('show');
         });
 
-        document.getElementById('endSessionDissatisfy').addEventListener('click', () => { 
-            currentSatScore = 0; 
-            document.getElementById('endSessionModal').classList.remove('show'); 
-            document.getElementById('thankYouModal').classList.add('show'); 
+        // 만족도 선택
+        function selectSat(val, btn) {
+            _selectedSat = val;
+            resetSatButtons();
+            btn.style.borderColor = val === 1 ? '#4caf50' : '#e05252';
+            btn.style.background  = val === 1 ? '#e8f5e9' : '#fce4ec';
+            // 확인 버튼 활성화
+            const confirmBtn = document.getElementById('endSessionConfirm');
+            confirmBtn.disabled = false;
+            confirmBtn.style.opacity = '1';
+            confirmBtn.style.cursor  = 'pointer';
+        }
+
+        function resetSatButtons() {
+            ['endSessionSatisfy','endSessionDissatisfy'].forEach(id => {
+                const b = document.getElementById(id);
+                b.style.borderColor = '#e0e4f0';
+                b.style.background  = '#fff';
+            });
+        }
+
+        // 확인 버튼 → close API + sat_note 같이 전송
+        document.getElementById('endSessionConfirm').addEventListener('click', async () => {
+            if (_selectedSat === null) return;
+            await closeSession(_selectedSat);
         });
 
-        // 서버 전송 및 종료 통합 함수
-        async function closeSessionAndLeave(satScore, satNote) {
-            if(!windowSessId) {
-                location.href = 'Login.html';
-                return;
-            }
+        async function closeSession(satScore, endReason = 'NORMAL') {
+            const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+            const satNote = (document.getElementById('thankYouOneLine')?.value || '').trim();
             try {
-                await fetch(`${API_BASE_URL}/sessions/${windowSessId}/close`, {
+                await fetch(`${baseUrl}/sessions/${windowSessId}/close`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        end_reason: 'NORMAL', 
-                        sat: satScore, 
-                        sat_note: satNote 
+                    body: JSON.stringify({
+                        end_reason: endReason,
+                        sat: satScore,
+                        sat_note: satNote || null
                     })
                 });
             } catch (e) {
-                console.error("종료 처리 실패", e);
-            } finally {
-                location.href = 'Login.html';
+                console.error("세션 종료 실패:", e);
             }
+            _sessionClosed = true;
+            if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
+            document.getElementById('endSessionModal').classList.remove('show');
+            location.href = 'Login.html';
         }
 
-        // (수정 후) X 버튼 클릭 시 평가 없이 종료 처리
-        document.getElementById('endSessionCloseX').addEventListener('click', () => {
-            closeSessionAndLeave(null, null);
+        // ── 창 강제 종료 감지: Heartbeat 방식 ──
+        // 5초마다 서버에 ping → 15초 이상 없으면 서버가 자동 DROPOUT 처리
+        let _sessionClosed = false;
+        let _heartbeatTimer = null;
+
+        function startHeartbeat() {
+            if (_heartbeatTimer) return;
+            _heartbeatTimer = setInterval(() => {
+                if (_sessionClosed || !windowSessId) {
+                    clearInterval(_heartbeatTimer);
+                    return;
+                }
+                const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+                fetch(`${baseUrl}/sessions/${windowSessId}/heartbeat`, { method: 'POST' }).catch(() => {});
+            }, 5000);
+        }
+
+        // beforeunload는 보험으로 유지 (http 환경에선 작동)
+        window.addEventListener('beforeunload', () => {
+            if (_sessionClosed || !windowSessId) return;
+            const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+            navigator.sendBeacon(
+                `${baseUrl}/sessions/${windowSessId}/close`,
+                new Blob([JSON.stringify({ end_reason: 'DROPOUT', sat: null, sat_note: null })],
+                         { type: 'application/json' })
+            );
         });
 
-        // 한줄평 저장 및 확인 버튼 클릭 시 (데이터베이스 전송)
-        document.getElementById('thankYouSaveConfirm').addEventListener('click', () => {
-            const noteText = document.getElementById('thankYouOneLine').value.trim();
-            closeSessionAndLeave(currentSatScore, noteText || null);
+
+
+        // ── 고민 유형 선택 모달 로직 ──
+        let _topicList = [];          // DB에서 불러온 전체 topic 목록
+        let _selectedTopics = [];     // 선택된 topic id 배열
+        let _etcTopicId = null;       // '기타' topic의 id (있으면)
+
+        async function loadAndShowTopicModal() {
+            const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+            try {
+                const res = await fetch(`${baseUrl}/topics`);
+                const data = await res.json();
+                _topicList = data.items || [];
+            } catch (e) {
+                console.error('topic 목록 로드 실패:', e);
+                _topicList = [];
+            }
+            renderTopicGrid();
+            document.getElementById('topicSelectModal').classList.add('show');
+        }
+
+        function renderTopicGrid() {
+            const grid = document.getElementById('topicSelectGrid');
+            grid.innerHTML = '';
+            _topicList.forEach(topic => {
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'topic-chip';
+                chip.dataset.id = topic.id;
+                chip.dataset.code = topic.code || '';
+                chip.textContent = topic.name;
+                chip.addEventListener('click', () => onTopicChipClick(chip, topic));
+                grid.appendChild(chip);
+            });
+        }
+
+        function onTopicChipClick(chip, topic) {
+            const id = topic.id;
+            const isEtc = (topic.code || '').toUpperCase() === 'ETC' || topic.name === '기타';
+            if (chip.classList.contains('selected')) {
+                // 선택 해제
+                chip.classList.remove('selected');
+                _selectedTopics = _selectedTopics.filter(t => t !== id);
+                if (isEtc) _etcTopicId = null;
+            } else {
+                if (_selectedTopics.length >= 3) return; // 최대 3개
+                if (isEtc) {
+                    // 기타 선택 시 입력 모달 열기
+                    _etcTopicId = id;
+                    document.getElementById('topicEtcModal').classList.add('show');
+                    return;
+                }
+                chip.classList.add('selected');
+                _selectedTopics.push(id);
+            }
+            updateTopicUI();
+        }
+
+        function updateTopicUI() {
+            const cnt = _selectedTopics.length;
+            document.getElementById('topicSelectedCount').textContent = `${cnt}개 선택됨 (최대 3개)`;
+            document.getElementById('topicModalComplete').disabled = cnt === 0;
+            // 최대 3개 도달 시 미선택 chip 비활성
+            document.querySelectorAll('.topic-chip:not(.selected)').forEach(c => {
+                c.classList.toggle('disabled', cnt >= 3);
+            });
+        }
+
+        // 기타 모달 확인
+        document.getElementById('topicEtcConfirm').addEventListener('click', () => {
+            const val = document.getElementById('topicEtcInput').value.trim();
+            if (!val) { alert('내용을 입력해주세요.'); return; }
+            if (_etcTopicId && !_selectedTopics.includes(_etcTopicId)) {
+                _selectedTopics.push(_etcTopicId);
+                // grid에서 기타 chip 선택 표시
+                const etcChip = document.querySelector(`.topic-chip[data-id="${_etcTopicId}"]`);
+                if (etcChip) etcChip.classList.add('selected');
+            }
+            document.getElementById('topicEtcModal').classList.remove('show');
+            updateTopicUI();
+        });
+        document.getElementById('topicEtcCancel').addEventListener('click', () => {
+            _etcTopicId = null;
+            document.getElementById('topicEtcInput').value = '';
+            document.getElementById('topicEtcModal').classList.remove('show');
+        });
+
+        // 닫기 버튼 (건너뛰기)
+        document.getElementById('topicModalClose').addEventListener('click', () => {
+            document.getElementById('topicSelectModal').classList.remove('show');
+        });
+
+        // 완료 버튼
+        document.getElementById('topicModalComplete').addEventListener('click', async () => {
+            if (_selectedTopics.length === 0) return;
+            const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
+            try {
+                await fetch(`${baseUrl}/sessions/${windowSessId}/topics`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic_ids: _selectedTopics })
+                });
+            } catch (e) {
+                console.error('topic 저장 실패:', e);
+            }
+            document.getElementById('topicSelectModal').classList.remove('show');
         });
 
         document.addEventListener("DOMContentLoaded", initSession);
