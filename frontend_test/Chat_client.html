@@ -312,7 +312,7 @@
         /* [중요] config.js에서 정의된 API_BASE_URL을 사용합니다. 
            만약 ReferenceError가 발생한다면 config.js 로드 여부를 확인하세요. */
         
-        const ANALYZE_URL = (typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000') + '/analyze';
+        const ANALYZE_URL = 'http://127.0.0.1:8001/analyze'; 
         const clientId = localStorage.getItem('client_id') || 1; 
         const counselorId = localStorage.getItem('counselor_id') || 1; 
         const clientName = localStorage.getItem('client_name') || '내담자';
@@ -333,6 +333,22 @@
         });
 
         async function initSession() {
+            // 1. [추가] localStorage에서 이름과 ID를 가져와 화면에 표시
+            const storedName = localStorage.getItem('client_name');
+            const storedId = localStorage.getItem('client_id');
+
+            if (storedName) {
+                // 사이드바나 프로필 영역의 이름 변경
+                const userNameEl = document.querySelector('.user-name');
+                if (userNameEl) userNameEl.textContent = storedName;
+            }
+            if (storedId) {
+                // 이메일 자리에 ID 표시 (선택 사항)
+                const userEmailEl = document.querySelector('.user-email');
+                if (userEmailEl) userEmailEl.textContent = `ID: ${storedId}`;
+            }
+
+            // --- 아래는 기존 로직 그대로 유지 ---
             // [체크] API_BASE_URL이 존재하지 않을 경우를 대비한 안전장치
             const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
             
@@ -348,6 +364,7 @@
                     document.getElementById('headerSessionId').innerText = `SESS-${data.sess_id} · 상담 진행 중`;
                     setInterval(fetchMessages, 2000);
                     startHeartbeat();  // heartbeat 시작
+                    loadAndShowTopicModal(); // 고민 유형 선택 모달 표시
                 }
             } catch (e) { console.error("세션 실패:", e); }
         }
@@ -531,11 +548,13 @@
             await closeSession(_selectedSat);
         });
 
-        async function closeSession(satScore, endReason = 'NORMAL') {
+async function closeSession(satScore, endReason = 'NORMAL') {
             const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
             const satNote = (document.getElementById('thankYouOneLine')?.value || '').trim();
+            
             try {
-                await fetch(`${baseUrl}/sessions/${windowSessId}/close`, {
+                // 1. 서버에 종료 요청 및 만족도 데이터 전송 (await로 완료 대기)
+                const response = await fetch(`${baseUrl}/sessions/${windowSessId}/close`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -544,13 +563,24 @@
                         sat_note: satNote || null
                     })
                 });
+
+                if (response.ok) {
+                    // 2. 저장이 확인되면 안내 메시지 후 이동
+                    alert("상담이 안전하게 종료되었습니다.");
+                }
             } catch (e) {
                 console.error("세션 종료 실패:", e);
+                // 네트워크 오류 등이 발생해도 일단 페이지는 이동시킵니다.
             }
+
+            // 3. 상태 업데이트 및 타이머 정리
             _sessionClosed = true;
             if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
+            
             document.getElementById('endSessionModal').classList.remove('show');
-            location.href = 'Login.html';
+
+            // 4. [수정] 이동 경로를 Landing.html로 명확히 지정 (404 방지)
+            location.href = 'Landing.html'; 
         }
 
         // ── 창 강제 종료 감지: Heartbeat 방식 ──
@@ -584,17 +614,11 @@
 
 
         // ── 고민 유형 선택 모달 로직 ──
-        // ── 고민 유형 선택 모달 로직 ──
         let _topicList = [];          // DB에서 불러온 전체 topic 목록
         let _selectedTopics = [];     // 선택된 topic id 배열
         let _etcTopicId = null;       // '기타' topic의 id (있으면)
 
         async function loadAndShowTopicModal() {
-            // 모달 즉시 표시 (로딩 상태)
-            document.getElementById('topicSelectModal').classList.add('show');
-            const grid = document.getElementById('topicSelectGrid');
-            grid.innerHTML = '<div style="color:#aaa;font-size:0.9rem;padding:12px;">목록 불러오는 중...</div>';
-
             const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
             try {
                 const res = await fetch(`${baseUrl}/topics`);
@@ -605,6 +629,7 @@
                 _topicList = [];
             }
             renderTopicGrid();
+            document.getElementById('topicSelectModal').classList.add('show');
         }
 
         function renderTopicGrid() {
@@ -626,12 +651,14 @@
             const id = topic.id;
             const isEtc = (topic.code || '').toUpperCase() === 'ETC' || topic.name === '기타';
             if (chip.classList.contains('selected')) {
+                // 선택 해제
                 chip.classList.remove('selected');
                 _selectedTopics = _selectedTopics.filter(t => t !== id);
                 if (isEtc) _etcTopicId = null;
             } else {
-                if (_selectedTopics.length >= 3) return;
+                if (_selectedTopics.length >= 3) return; // 최대 3개
                 if (isEtc) {
+                    // 기타 선택 시 입력 모달 열기
                     _etcTopicId = id;
                     document.getElementById('topicEtcModal').classList.add('show');
                     return;
@@ -646,6 +673,7 @@
             const cnt = _selectedTopics.length;
             document.getElementById('topicSelectedCount').textContent = `${cnt}개 선택됨 (최대 3개)`;
             document.getElementById('topicModalComplete').disabled = cnt === 0;
+            // 최대 3개 도달 시 미선택 chip 비활성
             document.querySelectorAll('.topic-chip:not(.selected)').forEach(c => {
                 c.classList.toggle('disabled', cnt >= 3);
             });
@@ -657,6 +685,7 @@
             if (!val) { alert('내용을 입력해주세요.'); return; }
             if (_etcTopicId && !_selectedTopics.includes(_etcTopicId)) {
                 _selectedTopics.push(_etcTopicId);
+                // grid에서 기타 chip 선택 표시
                 const etcChip = document.querySelector(`.topic-chip[data-id="${_etcTopicId}"]`);
                 if (etcChip) etcChip.classList.add('selected');
             }
@@ -664,9 +693,9 @@
             updateTopicUI();
         });
         document.getElementById('topicEtcCancel').addEventListener('click', () => {
-            document.getElementById('topicEtcModal').classList.remove('show');
             _etcTopicId = null;
             document.getElementById('topicEtcInput').value = '';
+            document.getElementById('topicEtcModal').classList.remove('show');
         });
 
         // 닫기 버튼 (건너뛰기)
@@ -678,26 +707,19 @@
         document.getElementById('topicModalComplete').addEventListener('click', async () => {
             if (_selectedTopics.length === 0) return;
             const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : 'http://127.0.0.1:8000';
-            const client = clientId ? Number(clientId) : 1;
-            const topicPayload = _selectedTopics.map((topicId, index) =>
-                ({ client_id: client, topic_id: topicId, prio: index + 1 })
-            );
             try {
-                await fetch(`${baseUrl}/client-topics`, {
+                await fetch(`${baseUrl}/sessions/${windowSessId}/topics`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(topicPayload)
+                    body: JSON.stringify({ topic_ids: _selectedTopics })
                 });
             } catch (e) {
-                console.warn('client-topics 전송 실패', e);
+                console.error('topic 저장 실패:', e);
             }
             document.getElementById('topicSelectModal').classList.remove('show');
         });
 
-        document.addEventListener("DOMContentLoaded", () => {
-            loadAndShowTopicModal(); // 페이지 열자마자 고민 유형 모달 표시
-            initSession();           // 세션 생성 병렬 진행
-        });
+        document.addEventListener("DOMContentLoaded", initSession);
     </script>
 </body>
 </html>

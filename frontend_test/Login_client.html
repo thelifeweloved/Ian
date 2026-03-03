@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindWay - 내담자 로그인</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; }
+        :root { --primary-color: #7389f4; --bg-dark: #373f50; --text-gray: #666; --input-bg: #f5f7fb; }
+        body, html { height: 100%; width: 100%; overflow: hidden; }
+        .container { display: flex; height: 100vh; width: 100vw; }
+        .brand-section { flex: 1; background-color: var(--bg-dark); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; text-align: center; padding: 44px 36px; }
+        .brand-content { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; }
+        .brand-section h1 { font-family: 'Cormorant Garamond', serif; font-size: 3.1rem; font-weight: 300; margin: 0; letter-spacing: 0.35em; text-transform: uppercase; color: #E5C76B; opacity: 0.95; }
+        .brand-logo { display: block; width: 140px; height: auto; margin: 0 auto; object-fit: contain; opacity: 0.55; filter: brightness(0) invert(1) brightness(0.85) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15)); }
+        .brand-section p { font-size: 1.2rem; opacity: 0.8; font-weight: 400; }
+        .content-section { flex: 1; background-color: #ffffff; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 44px 40px; overflow-y: auto; }
+        .form-container { width: 100%; max-width: 420px; margin: 0 auto; text-align: center; display: none; }
+        .form-container.active { display: block; }
+        .welcome-text { margin-bottom: 1.75rem; }
+        .welcome-text h2 { font-size: 2.2rem; color: #333; margin-bottom: 0.5rem; font-weight: 700; }
+        .welcome-text p { color: #999; font-size: 1.1rem; }
+        .form-group { margin-bottom: 1rem; text-align: left; }
+        .form-group label { display: block; font-size: 0.95rem; margin-bottom: 6px; color: #555; font-weight: 600; }
+        .input-group { position: relative; }
+        .input-group i:not(.eye-icon) { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: #aaa; font-size: 1.1rem; }
+        .eye-icon { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 1.1rem; z-index: 10; }
+        .input-control { width: 100%; padding: 16px 46px 16px 48px; border: 1px solid #e1e5ee; border-radius: 10px; background-color: var(--input-bg); font-size: 1.05rem; outline: none; transition: all 0.2s ease; }
+        .input-control:focus { border-color: #7389f4; background-color: #fff; box-shadow: 0 0 0 3px rgba(115, 137, 244, 0.1); }
+        .main-btn { width: 100%; padding: 17px; background-color: var(--primary-color); color: white; border: none; border-radius: 10px; font-size: 1.1rem; font-weight: 600; cursor: pointer; margin-top: 1.25rem; box-shadow: 0 4px 12px rgba(115, 137, 244, 0.2); }
+        .footer-link { margin-top: 1.75rem; font-size: 0.95rem; color: #aaa; text-align: center; }
+        .footer-link a { color: var(--primary-color); text-decoration: none; font-weight: bold; cursor: pointer; }
+        .counselor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 4px; }
+        .counselor-card { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 12px; border: 1.5px solid #e8eaef; border-radius: 14px; cursor: pointer; transition: all 0.15s; background: #fafbfc; text-align: center; }
+        .counselor-card:hover { border-color: #7389f4; background: #f0f2ff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(115,137,244,0.12); }
+        .counselor-card.selected { border-color: #7389f4; background: linear-gradient(135deg, #7389f4, #5b6de0); color: #fff; box-shadow: 0 6px 16px rgba(115,137,244,0.3); }
+        .counselor-avatar { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #e8eaef, #d0d4e8); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; flex-shrink: 0; }
+        .counselor-card.selected .counselor-avatar { background: rgba(255,255,255,0.2); }
+        .counselor-name { font-weight: 700; font-size: 0.95rem; }
+        .counselor-sub  { font-size: 0.75rem; opacity: 0.6; }
+        .counselor-check { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid #dde0e7; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; }
+        .counselor-card.selected .counselor-check { background: rgba(255,255,255,0.3); border-color: transparent; }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="brand-section">
+            <div class="brand-content">
+                <img src="Logo.png" alt="MindWay Logo" class="brand-logo">
+                <h1>MindWay</h1>
+                <p>더 나은 상담을 위한 여정의 시작.</p>
+            </div>
+        </div>
+
+        <div class="content-section">
+            <div id="login-view" class="form-container active">
+                <div class="welcome-text">
+                    <h2>Welcome</h2>
+                    <p>내담자 로그인</p>
+                </div>
+
+                <form id="login-client-form" onsubmit="handleClientLogin(event)">
+                    <div class="input-group" style="margin-bottom: 0.9rem;">
+                        <i class="fa-regular fa-user"></i>
+                        <input type="email" id="clientEmail" class="input-control" placeholder="이메일" required>
+                    </div>
+                    <div class="input-group">
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="clientPwd" class="input-control" placeholder="비밀번호를 입력하세요" required>
+                        <i class="fa-regular fa-eye-slash eye-icon" onclick="togglePassword('clientPwd', this)"></i>
+                    </div>
+                    <button type="submit" class="main-btn">상담 화면으로 이동</button>
+                </form>
+
+                <div class="footer-link">
+                    계정이 없으신가요? <a onclick="toggleView('signup')">회원가입</a>
+                </div>
+            </div>
+
+            <!-- 상담사 선택 뷰 -->
+            <div id="counselor-view" class="form-container">
+                <div class="welcome-text">
+                    <h2>상담 예약</h2>
+                    <p>상담사와 일정을 선택해주세요</p>
+                </div>
+
+                <!-- Step 1: 상담사 선택 -->
+                <div id="stepCounselor">
+                    <p style="font-size:0.82rem;font-weight:700;color:#aab0be;letter-spacing:0.06em;text-align:left;margin-bottom:10px;">STEP 1 · 상담사 선택</p>
+                    <div id="counselorList"></div>
+                </div>
+
+                <!-- Step 2: 날짜/시간 선택 (상담사 선택 후 표시) -->
+                <div id="stepDatetime" style="display:none;margin-top:18px;">
+                    <p style="font-size:0.82rem;font-weight:700;color:#aab0be;letter-spacing:0.06em;text-align:left;margin-bottom:10px;">STEP 2 · 날짜 및 시간 선택</p>
+                    <div style="display:flex;gap:10px;">
+                        <div style="flex:1;position:relative;">
+                            <i class="fa-regular fa-calendar" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#aab0be;font-size:0.95rem;pointer-events:none;"></i>
+                            <input type="date" id="apptDate" class="input-control" style="padding-left:40px;cursor:pointer;"
+                                min="" onchange="updateTimeSlots()">
+                        </div>
+                        <div style="flex:1;position:relative;">
+                            <i class="fa-regular fa-clock" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#aab0be;font-size:0.95rem;pointer-events:none;"></i>
+                            <select id="apptTime" class="input-control" style="padding-left:40px;cursor:pointer;appearance:none;">
+                                <option value="">시간 선택</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- 선택 요약 -->
+                    <div id="apptSummary" style="display:none;margin-top:14px;padding:14px 16px;background:#f0f2ff;border-radius:10px;border:1.5px solid #c7cff8;text-align:left;">
+                        <div style="font-size:0.82rem;color:#7389f4;font-weight:700;margin-bottom:4px;">예약 요약</div>
+                        <div id="summaryText" style="font-size:0.92rem;color:#373f50;font-weight:500;line-height:1.6;"></div>
+                    </div>
+                </div>
+
+                <button type="button" class="main-btn" id="btnStartCounseling" disabled onclick="startCounseling()" style="margin-top:20px;">상담 시작하기</button>
+            </div>
+
+            <div id="signup-view" class="form-container">
+                <div class="welcome-text">
+                    <h2>Create Account</h2>
+                    <p>내담자 등록</p>
+                </div>
+
+                <form id="client-form" onsubmit="handleSignup(event)">
+                    <div class="form-group">
+                        <label>로그인 ID (이메일)</label>
+                        <div class="input-group">
+                            <i class="fa-solid fa-envelope"></i>
+                            <input type="email" class="email-input input-control" placeholder="example@mindway.com" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>비밀번호</label>
+                        <div class="input-group">
+                            <i class="fa-solid fa-lock"></i>
+                            <input type="password" class="pwd-input input-control" placeholder="비밀번호를 입력하세요" required>
+                            <i class="fa-regular fa-eye-slash eye-icon" onclick="togglePassword(null, this)"></i>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>연락처</label>
+                        <div class="input-group">
+                            <i class="fa-solid fa-phone"></i>
+                            <input type="tel" class="phone-input input-control" placeholder="010-0000-0000">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>내담자 성함</label>
+                        <div class="input-group">
+                            <i class="fa-regular fa-user"></i>
+                            <input type="text" class="name-input input-control" placeholder="성함을 입력하세요" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="main-btn">내담자 등록 완료</button>
+                </form>
+
+                <div class="footer-link">
+                    이미 계정이 있으신가요? <a onclick="toggleView('login')">로그인하기</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://127.0.0.1:8000';
+
+        function togglePassword(inputId, icon) {
+            const input = inputId ? document.getElementById(inputId) : icon.parentElement.querySelector('input');
+            const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+            input.setAttribute('type', type);
+            icon.classList.toggle('fa-eye');
+            icon.classList.toggle('fa-eye-slash');
+        }
+
+        function toggleView(view) {
+            document.getElementById('login-view').classList.toggle('active', view === 'login');
+            document.getElementById('signup-view').classList.toggle('active', view === 'signup');
+            document.getElementById('counselor-view').classList.toggle('active', view === 'counselor');
+        }
+
+        let _selectedCounselorId = null;
+
+        const AVATAR_COLORS = ['#7389f4','#f4a473','#73c9f4','#a473f4','#f473b8','#73f4a4'];
+        let _selectedCounselorName = '';
+        let _selectedDate = '';
+        let _selectedTime = '';
+
+        async function loadCounselorList() {
+            try {
+                const res  = await fetch(`${API_BASE_URL}/counselors`);
+                const data = await res.json();
+                const list = data.items || [];
+                const container = document.getElementById('counselorList');
+                if (list.length === 0) {
+                    container.innerHTML = '<p style="color:#aab;font-size:0.9rem;">등록된 상담사가 없습니다.</p>';
+                    return;
+                }
+                container.innerHTML = '<div class="counselor-grid">' + list.map((c, i) => {
+                    const initial = c.name.charAt(0);
+                    const color   = AVATAR_COLORS[i % AVATAR_COLORS.length];
+                    return `
+                    <div class="counselor-card" id="card-${c.id}" onclick="selectCounselor(${c.id}, '${c.name}', this)">
+                        <div class="counselor-avatar" style="background:${color}20;color:${color};font-size:1.1rem;font-weight:700;">${initial}</div>
+                        <div class="counselor-name">${c.name}</div>
+                        <div class="counselor-sub">심리상담사</div>
+                        <div class="counselor-check">✓</div>
+                    </div>`;
+                }).join('') + '</div>';
+
+                // 날짜 최솟값 오늘로 설정
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('apptDate').min = today;
+                document.getElementById('apptDate').value = today;
+                updateTimeSlots();
+            } catch(e) {
+                console.error('상담사 목록 로드 실패:', e);
+            }
+        }
+
+        function selectCounselor(id, name, el) {
+            _selectedCounselorId = id;
+            _selectedCounselorName = name;
+            document.querySelectorAll('.counselor-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            document.getElementById('stepDatetime').style.display = 'block';
+            updateSummary();
+        }
+
+        function updateTimeSlots() {
+            const timeSelect = document.getElementById('apptTime');
+            const slots = ['09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
+            timeSelect.innerHTML = '<option value="">시간 선택</option>' +
+                slots.map(t => `<option value="${t}">${t}</option>`).join('');
+            timeSelect.onchange = () => {
+                _selectedTime = timeSelect.value;
+                _selectedDate = document.getElementById('apptDate').value;
+                updateSummary();
+            };
+        }
+
+        function updateSummary() {
+            if (!_selectedCounselorId || !_selectedDate || !_selectedTime) {
+                document.getElementById('apptSummary').style.display = 'none';
+                document.getElementById('btnStartCounseling').disabled = true;
+                return;
+            }
+            const dateObj = new Date(_selectedDate);
+            const dateStr = dateObj.toLocaleDateString('ko-KR', {month:'long', day:'numeric', weekday:'short'});
+            document.getElementById('summaryText').innerHTML =
+                `👨‍⚕️ <b>${_selectedCounselorName}</b> 상담사<br>📅 ${dateStr} ${_selectedTime}`;
+            document.getElementById('apptSummary').style.display = 'block';
+            document.getElementById('btnStartCounseling').disabled = false;
+        }
+
+        function startCounseling() {
+            if (!_selectedCounselorId) return;
+            localStorage.setItem('counselor_id', _selectedCounselorId);
+            // appt 테이블에 예약 저장 후 이동
+            const apptDatetime = _selectedDate && _selectedTime
+                ? `${_selectedDate}T${_selectedTime}:00` : null;
+            if (apptDatetime) {
+                const clientId = localStorage.getItem('client_id');
+                fetch(`${API_BASE_URL}/appt`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        client_id: Number(clientId),
+                        counselor_id: Number(_selectedCounselorId),
+                        at: apptDatetime,
+                        status: 'CONFIRMED'
+                    })
+                }).catch(() => {});
+            }
+            location.href = 'Chat_client.html';
+        }
+
+        async function handleClientLogin(event) {
+            event.preventDefault();
+            const email = document.getElementById('clientEmail').value;
+            const pwd = document.getElementById('clientPwd').value;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/client/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, pwd: pwd })
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    const cid = result.client_id;
+                    const name = result.client_name || '내담자';
+                    localStorage.setItem('client_id', cid);
+                    localStorage.setItem('client_name', name);
+                    // 상담사 선택 화면으로 전환
+                    await loadCounselorList();
+                    toggleView('counselor');
+                } else {
+                    alert('로그인 실패: ' + (result.detail || '오류 발생'));
+                }
+            } catch (error) {
+                alert('서버 연결 오류');
+            }
+        }
+
+
+    </script>
+</body>
+</html>

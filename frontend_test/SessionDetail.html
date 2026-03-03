@@ -49,6 +49,13 @@
             margin-bottom: 0;
         }
         .topic-keywords-box .topic-line { font-size: 0.95rem; color: #373f50; font-weight: 600; margin-bottom: 10px; }
+        .topic-compare-wrap { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+        .topic-compare-box { flex: 1; min-width: 160px; background: #f8f9fe; border: 1px solid #e8ecf4; border-radius: 10px; padding: 12px 14px; }
+        .topic-compare-label { font-size: 0.72rem; font-weight: 700; color: #aab0be; margin-bottom: 8px; letter-spacing: 0.04em; }
+        .topic-compare-label.ai-label { color: #7389f4; }
+        .topic-tag { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; margin: 2px; background: #ede9fe; color: #7c3aed; }
+        .topic-tag.ai-tag { background: #dbeafe; color: #1d4ed8; }
+        .topic-mismatch-badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; background: #fff3cd; color: #b45309; border: 1px solid #f0a500; }
         .topic-keywords-box .topic-line span { color: #666; font-weight: 500; margin-right: 6px; }
         .keyword-tags { display: flex; flex-wrap: wrap; gap: 8px; }
         .keyword-tags .tag { display: inline-block; padding: 6px 12px; background: #fff; border: 1px solid #7389f4; color: #7389f4; border-radius: 20px; font-size: 0.85rem; }
@@ -137,6 +144,19 @@
         .metric-card .metric-value { font-size: 1.1rem; font-weight: 700; color: #373f50; }
         .metric-card .metric-value .unit { font-size: 0.8rem; font-weight: 500; color: #888; }
 
+        /* 전체 대화 로그 */
+        .full-chat-wrap { max-height: 420px; overflow-y: auto; border: 1px solid #e8ecf4; border-radius: 8px; padding: 12px 16px; background: #fafbfc; }
+        .full-chat-wrap::-webkit-scrollbar { width: 5px; }
+        .full-chat-wrap::-webkit-scrollbar-thumb { background: #dde2ef; border-radius: 4px; }
+        .chat-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start; }
+        .chat-row.row-client { flex-direction: row; }
+        .chat-row.row-counselor { flex-direction: row-reverse; }
+        .chat-bubble { max-width: 72%; padding: 8px 12px; border-radius: 12px; font-size: 0.88rem; line-height: 1.5; word-break: break-word; }
+        .chat-row.row-client .chat-bubble { background: #fff; border: 1px solid #e8ecf4; color: #333; border-radius: 4px 12px 12px 12px; }
+        .chat-row.row-counselor .chat-bubble { background: #7389f4; color: #fff; border-radius: 12px 4px 12px 12px; }
+        .chat-meta { font-size: 0.72rem; color: #aab0be; white-space: nowrap; margin-top: 4px; }
+        .chat-row.row-counselor .chat-meta { text-align: right; }
+        .chat-empty { color: #aab0be; font-size: 0.88rem; text-align: center; padding: 20px 0; }
         /* 신호 탐지 구간 발화 로그 (overflow: hidden 추가하여 라운드 디자인 보호) */
         .evidence-table-wrap { overflow: hidden; border: 1px solid #e8ecf4; border-radius: 8px; }
         .evidence-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -194,13 +214,7 @@
             </div>
         </section>
 
-        <section class="report-section">
-            <h3>대표 주제 및 키워드</h3>
-            <div class="topic-keywords-box" id="topicKeywordsBox">
-                <div class="topic-line"><span>대표 주제:</span><span id="topicText">—</span></div>
-                <div class="keyword-tags" id="keywordTags"></div>
-            </div>
-        </section>
+        
 
         <section class="report-section">
             <h3>AI 분석 요약 및 상담 참고자료</h3>
@@ -218,6 +232,31 @@
                         <tr><td colspan="3" class="empty-msg">해당 구간 발화 로그가 없습니다.</td></tr>
                     </tbody>
                 </table>
+            </div>
+        </section>
+
+        <section class="report-section">
+            <h3>고민 주제 분석</h3>
+            <div class="topic-compare-wrap">
+                <div class="topic-compare-box">
+                    <div class="topic-compare-label">내담자가 선택한 고민 주제</div>
+                    <div id="clientTopicTags"><span style="color:#ccc;font-size:0.82rem;">정보 없음</span></div>
+                </div>
+                <div class="topic-compare-box">
+                    <div class="topic-compare-label ai-label">AI가 분석한 상담 주제</div>
+                    <div id="aiTopicTags"><span style="color:#ccc;font-size:0.82rem;">HCX 분석 후 표시</span></div>
+                    <div class="keyword-tags" id="keywordTags" style="margin-top:8px;"></div>
+                </div>
+            </div>
+            <div id="topicMismatchNote" style="display:none;margin-top:4px;">
+                <span class="topic-mismatch-badge">⚠️ 신청 주제와 AI 분석 주제가 다릅니다</span>
+            </div>
+        </section>
+
+        <section class="report-section">
+            <h3>전체 상담 대화 로그</h3>
+            <div class="full-chat-wrap" id="fullChatWrap">
+                <div class="chat-empty">대화 내역을 불러오는 중...</div>
             </div>
         </section>
 
@@ -248,13 +287,15 @@
             if (!sessId) return; // 세션 ID가 없으면 기본 HTML 껍데기를 그대로 보여줍니다.
 
             try {
-                const [dashRes, msgRes] = await Promise.all([
+                const [dashRes, msgRes, alertRes] = await Promise.all([
                     fetch(`${API_BASE_URL}/sessions/${sessId}/dashboard`),
-                    fetch(`${API_BASE_URL}/sessions/${sessId}/messages?limit=100`)
+                    fetch(`${API_BASE_URL}/sessions/${sessId}/messages?limit=500`),
+                    fetch(`${API_BASE_URL}/sessions/${sessId}/alerts`).catch(() => null)
                 ]);
 
-                const dash = await dashRes.json();
-                const msgs = await msgRes.json();
+                const dash      = await dashRes.json();
+                const msgs      = await msgRes.json();
+                const alertData = alertRes ? await alertRes.json() : { items: [] };
 
                 // 헤더 업데이트
                 document.getElementById('reportMeta').textContent = `세션 ID: S-${sessId} | 생성일: ${new Date(dash.session?.start_at || Date.now()).toLocaleString('ko-KR')}`;
@@ -289,37 +330,114 @@
 
                 // 토픽 및 키워드 업데이트
                 // topic_analysis: 여러 토픽이 있으면 가장 최신(첫 번째) 사용
-                const topicList = dash.topic_analysis || [];
-                const topic = topicList[0] || {};
-                // 여러 토픽명이 있으면 모두 표시
-                if (topicList.length > 1) {
-                    const allTopicNames = topicList.map(t => t.topic_name).filter(Boolean).join(' · ');
-                    document.getElementById('topicText').textContent = allTopicNames || '—';
+                // ── 내담자 신청 주제 (client_topics) ──
+                const clientTopics = dash.client_topics || [];
+                const clientTagsEl = document.getElementById('clientTopicTags');
+                if (clientTopics.length > 0) {
+                    clientTagsEl.innerHTML = clientTopics.map(t =>
+                        `<span class="topic-tag">${t.name}</span>`
+                    ).join('');
+                } else {
+                    clientTagsEl.innerHTML = '<span style="color:#ccc;font-size:0.82rem;">선택된 주제 없음</span>';
                 }
-                document.getElementById('topicText').textContent = topic.topic_name || '진행 중인 세션';
-                // keywords: main.py에서 내려주면 사용, 없으면 topic_name으로 대체
+
+                // ── AI 분석 주제 (sess_analysis) ──
+                const topicList = (dash.topic_analysis || []).filter(t => t.summary);
+                const aiTagsEl  = document.getElementById('aiTopicTags');
+                const topic     = topicList[0] || {};
+                if (topicList.length > 0) {
+                    aiTagsEl.innerHTML = topicList.map(t =>
+                        `<span class="topic-tag ai-tag">${t.topic_name || '—'}</span>`
+                    ).join('');
+                } else {
+                    aiTagsEl.innerHTML = '<span style="color:#ccc;font-size:0.82rem;">HCX 분석 후 표시</span>';
+                }
+
+                // ── 불일치 감지 ──
+                if (clientTopics.length > 0 && topicList.length > 0) {
+                    const clientCodes = clientTopics.map(t => t.name);
+                    const aiCodes     = topicList.map(t => t.topic_name);
+                    const overlap     = clientCodes.some(n => aiCodes.includes(n));
+                    const mismatchEl  = document.getElementById('topicMismatchNote');
+                    if (mismatchEl) mismatchEl.style.display = overlap ? 'none' : 'block';
+                }
+
+                // ── 키워드 태그 (HCX) ──
                 const keywords = topic.keywords?.length ? topic.keywords
                     : topic.topic_name ? [topic.topic_name] : [];
-                document.getElementById('keywordTags').innerHTML = keywords.map(kw => `<span class="tag">${kw}</span>`).join('') || '<span style="color:#aab0be;font-size:0.85rem;">HCX 분석 후 표시됩니다</span>';
+                document.getElementById('keywordTags').innerHTML = keywords.map(kw =>
+                    `<span class="tag">${kw}</span>`
+                ).join('') || '<span style="color:#aab0be;font-size:0.85rem;">HCX 분석 후 표시됩니다</span>';
 
-                // AI 요약
-                if(topic.summary) {
+                // ── AI 요약 ──
+                if (topic.summary) {
                     document.getElementById('aiSummary').textContent = topic.summary;
                 }
 
-                // 실제 발화 로그 업데이트 (내용이 없을 경우 테이블 내부 tr 삽입으로 라운드 유지)
+                const allMsgs   = msgs.items || [];
+                const allAlerts = alertData.items || alertData || [];
+
+                // ── 신호 탐지 구간 발화 로그 (alert at 기준 ±2분) ──
                 const evidenceBody = document.getElementById('evidenceTableBody');
-                const items = msgs.items || [];
-                if (items.length > 0) {
-                    evidenceBody.innerHTML = items.slice(0, 5).map(m => `
-                        <tr>
-                            <td class="col-time">${new Date(m.at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'})}</td>
-                            <td class="col-role">${m.speaker === 'CLIENT' ? '내담자' : '상담사'}</td>
-                            <td class="col-utterance">${m.text}</td>
-                        </tr>
-                    `).join('');
+                if (allAlerts.length === 0) {
+                    evidenceBody.innerHTML = `<tr><td colspan="3" class="empty-msg">감지된 신호가 없습니다.</td></tr>`;
                 } else {
-                    evidenceBody.innerHTML = `<tr><td colspan="3" class="empty-msg">해당 구간 발화 로그가 없습니다.</td></tr>`;
+                    // alert 시각들 수집
+                    const alertTimes = allAlerts.map(a => new Date(a.at).getTime()).filter(Boolean);
+                    const WINDOW_MS  = 2 * 60 * 1000; // ±2분
+
+                    // alert 시각 기준 ±2분 범위에 속하는 메시지 필터
+                    const evidenceMsgs = allMsgs.filter(m => {
+                        const mt = new Date(m.at).getTime();
+                        return alertTimes.some(at => Math.abs(mt - at) <= WINDOW_MS);
+                    });
+
+                    if (evidenceMsgs.length === 0) {
+                        evidenceBody.innerHTML = `<tr><td colspan="3" class="empty-msg">신호 감지 구간 전후 발화 내역이 없습니다.</td></tr>`;
+                    } else {
+                        evidenceBody.innerHTML = evidenceMsgs.map(m => {
+                            // 해당 메시지와 가장 가까운 alert 찾아서 신호 유형 표시
+                            const mt      = new Date(m.at).getTime();
+                            const nearest = allAlerts.reduce((prev, cur) =>
+                                Math.abs(new Date(cur.at).getTime() - mt) < Math.abs(new Date(prev.at).getTime() - mt) ? cur : prev
+                            );
+                            const withinAlert = Math.abs(new Date(nearest.at).getTime() - mt) <= WINDOW_MS;
+                            const typeBadge   = withinAlert && nearest.type
+                                ? `<span style="font-size:0.68rem;padding:1px 5px;border-radius:3px;background:#fff0f0;color:#e05252;margin-left:6px;">${nearest.type}</span>`
+                                : '';
+                            return `
+                            <tr>
+                                <td class="col-time">${new Date(m.at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'})}</td>
+                                <td class="col-role">${m.speaker === 'CLIENT' ? '내담자' : '상담사'}</td>
+                                <td class="col-utterance">${m.text}${typeBadge}</td>
+                            </tr>`;
+                        }).join('');
+                    }
+                }
+
+                // ── 전체 상담 대화 로그 ──
+                const fullChatWrap = document.getElementById('fullChatWrap');
+                if (allMsgs.length === 0) {
+                    fullChatWrap.innerHTML = `<div class="chat-empty">대화 내역이 없습니다.</div>`;
+                } else {
+                    fullChatWrap.innerHTML = allMsgs.map(m => {
+                        const isClient = m.speaker === 'CLIENT';
+                        const timeStr  = new Date(m.at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
+                        const role     = isClient ? '내담자' : '상담사';
+                        // 이미지 메시지 처리
+                        const bubble   = m.text?.startsWith('data:image')
+                            ? `<img src="${m.text}" style="max-width:180px;border-radius:8px;">`
+                            : m.text || '';
+                        return `
+                        <div class="chat-row ${isClient ? 'row-client' : 'row-counselor'}">
+                            <div>
+                                <div class="chat-bubble">${bubble}</div>
+                                <div class="chat-meta">${role} · ${timeStr}</div>
+                            </div>
+                        </div>`;
+                    }).join('');
+                    // 스크롤 맨 아래로
+                    fullChatWrap.scrollTop = fullChatWrap.scrollHeight;
                 }
 
                 // 메모 업데이트

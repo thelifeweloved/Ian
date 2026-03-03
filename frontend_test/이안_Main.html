@@ -1625,7 +1625,7 @@
 
             <!-- 차트 행 2: 토픽별 세션 분포 (전체 너비) -->
             <div style="margin-bottom:20px;">
-                <h3 class="section-title" style="margin-bottom:10px;">토픽별 세션 분포 <span style="font-size:0.75rem; font-weight:400; color:#aab0be; margin-left:6px;">상담 주제 분류 현황</span></h3>
+                <h3 class="section-title" style="margin-bottom:10px;">내담자 고민 유형 분포 <span style="font-size:0.75rem;font-weight:400;color:#aab0be;margin-left:6px;">내담자가 직접 선택한 고민 주제</span></h3>
                 <div class="card report-card">
                     <div style="height:180px;">
                         <canvas id="chart-topic-dist"></canvas>
@@ -1765,7 +1765,9 @@
             appts: [],
             counselors: [],
             clientGrade: [],
-            topicDist: []
+            topicDist:   [],   // 내담자 신청 주제
+            topicDistAi: [],   // AI 분석 주제
+            _topicTab:   'client'
         };
 
         window._alertTypeFilter = null;
@@ -1794,7 +1796,7 @@
                     fetch(`${API_BASE_URL}/appointments?${cidQuery}`),
                     fetch(`${API_BASE_URL}/counselors`),
                     fetch(`${API_BASE_URL}/stats/client-grade-dropout?counselor_id=${cid}`).catch(() => null),
-                    fetch(`${API_BASE_URL}/stats/topic-dist?counselor_id=${cid}`).catch(() => null)
+                    fetch(`${API_BASE_URL}/stats/topic-dist?counselor_id=${cid}&source=client`).catch(() => null)
                 ]);
 
                 STATE.sessions  = (await sessRes.json()).items || [];
@@ -1802,7 +1804,10 @@
                 STATE.appts     = (await apptRes.json()).items || [];
                 STATE.counselors= (await counselorRes.json()).items || [];
                 STATE.clientGrade = gradeRes ? ((await gradeRes.json()).items || []) : [];
-                STATE.topicDist   = topicRes ? ((await topicRes.json()).items || []) : [];
+                if (topicRes) {
+                    const topicJson = await topicRes.json();
+                    STATE.topicDist = topicJson.items || [];
+                }
 
                 // 최근 15개 세션 품질 데이터
                 const recentSessions = STATE.sessions.slice(0, 15);
@@ -2095,6 +2100,47 @@
         }
 
         // 5. 전체 UI 및 차트 렌더링
+        function switchTopicTab(tab) {
+            STATE._topicTab = tab;
+            const btnClient = document.getElementById('topicTabClient');
+            const btnAi     = document.getElementById('topicTabAi');
+            if (!btnClient || !btnAi) return;
+            if (tab === 'client') {
+                btnClient.style.cssText += ';background:#7389f4;color:#fff;border-color:#7389f4;';
+                btnAi.style.cssText     += ';background:#fff;color:#888;border-color:#dde0e7;';
+            } else {
+                btnAi.style.cssText     += ';background:#7389f4;color:#fff;border-color:#7389f4;';
+                btnClient.style.cssText += ';background:#fff;color:#888;border-color:#dde0e7;';
+            }
+            renderTopicChart(tab);
+        }
+
+        function renderTopicChart(tab) {
+            const src    = (tab === 'ai') ? STATE.topicDistAi : STATE.topicDist;
+            const noData = !src || src.length === 0;
+            const labels = noData ? ['데이터 없음'] : src.map(t => t.topic_name || '-');
+            const counts = noData ? [0]             : src.map(t => Number(t.total || 0));
+            const colors = ['#7389f4','#58a6ff','#3fb950','#f0a500','#e05252','#a78bfa','#f97316','#14b8a6','#ec4899','#64748b'];
+            const barCfg = {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{ label: '세션 수', data: counts,
+                        backgroundColor: noData ? ['#e8ecf4'] : labels.map((_, i) => colors[i % colors.length]),
+                        borderRadius: 6, borderSkipped: false }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y}건` } } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
+            };
+            if (typeof Chart !== 'undefined') {
+                const c3 = document.getElementById('chart-topic-dist');
+                if (c3) { if (window._chartTopic) window._chartTopic.destroy(); window._chartTopic = new Chart(c3.getContext('2d'), barCfg); }
+            }
+        }
+
         function renderReportSections() {
             const el = (id) => document.getElementById(id);
             if (!el('kpi-sessions')) return;
@@ -2161,24 +2207,8 @@
                 if (c2) { if (window._chartGrade) window._chartGrade.destroy(); window._chartGrade = new Chart(c2.getContext('2d'), donutCfg); }
             }
 
-            // ③ 차트 3: 토픽별 세션 분포 (막대)
-            const topicLabels = STATE.topicDist.map(t => t.topic_name || t.topic_id || '-');
-            const topicCounts = STATE.topicDist.map(t => Number(t.total || t.count || 0));
-            const topicFallback = topicLabels.length === 0;
-            const barCfg = {
-                type: 'bar',
-                data: {
-                    labels: topicFallback ? ['T0','T1','T2','T3','T4','T5'] : topicLabels,
-                    datasets: [{ label: '세션 수', data: topicFallback ? [0,0,0,0,0,0] : topicCounts,
-                        backgroundColor: ['#7389f4','#58a6ff','#3fb950','#f0a500','#e05252','#a78bfa'],
-                        borderRadius: 6, borderSkipped: false }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
-            };
-            if (typeof Chart !== 'undefined') {
-                const c3 = document.getElementById('chart-topic-dist');
-                if (c3) { if (window._chartTopic) window._chartTopic.destroy(); window._chartTopic = new Chart(c3.getContext('2d'), barCfg); }
-            }
+            // ③ 차트 3: 토픽별 세션 분포 (막대) — 탭에 따라 데이터 전환
+            renderTopicChart("client");
         }
 
         // ② 우선 검토 세션 렌더 함수
