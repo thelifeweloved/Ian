@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MindWay - 내담자 로그인</title>
+    <script src="config.js"></script>    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -169,7 +170,6 @@
     </div>
 
     <script>
-        const API_BASE_URL = 'http://127.0.0.1:8000';
 
         function togglePassword(inputId, icon) {
             const input = inputId ? document.getElementById(inputId) : icon.parentElement.querySelector('input');
