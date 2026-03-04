@@ -526,6 +526,25 @@ def get_counselors(db: Session = Depends(get_db)):
     result = db.execute(text(sql)).mappings().all()
     return {"items": jsonable_encoder(list(result))}
 
+@app.post("/appt")
+def create_appt(payload: dict, db: Session = Depends(get_db)):
+    """
+    내담자가 상담사·날짜·시간 선택 후 예약 생성.
+    A안: 접수 없이 바로 CONFIRMED 저장 → 상담사 대시보드에 즉시 확정 상태로 표시.
+    """
+    cid  = payload.get("client_id")
+    coid = payload.get("counselor_id")
+    at   = payload.get("at")
+    if not (cid and coid and at):
+        raise HTTPException(status_code=400, detail="client_id, counselor_id, at 필수")
+
+    res = db.execute(text("""
+        INSERT INTO appt (client_id, counselor_id, at, status)
+        VALUES (:cid, :coid, :at, 'CONFIRMED')
+    """), {"cid": cid, "coid": coid, "at": at})
+    db.commit()
+    return {"ok": True, "appt_id": res.lastrowid}
+
 @app.patch("/appointments/{appt_id}")
 def update_appointment(appt_id: int, payload: ApptUpdateRequest, db: Session = Depends(get_db)):
     try:
@@ -565,26 +584,19 @@ def get_topics(db: Session = Depends(get_db)):
 
 @app.post("/sessions/{sess_id}/topics")
 def save_session_topics(sess_id: int, payload: dict, db: Session = Depends(get_db)):
-    """선택한 고민을 sess_analysis(AI 분석용)와 client_topic(내담자 이력용)에 동시 저장"""
+    """
+    내담자가 선택한 고민 유형을 client_topic(정보 이력용)에만 저장.
+    sess_analysis 분류는 세션 종료 후 HCX가 전체 대화를 분석하여 직접 기록함.
+    """
     topic_ids: List[int] = payload.get("topic_ids", [])
     client_id = payload.get("client_id")
 
     if not topic_ids:
         raise HTTPException(status_code=400, detail="topic_ids가 비어있습니다.")
 
-    for idx, tid in enumerate(topic_ids):
-        # 1. sess_analysis 저장
-        exists = db.execute(
-            text("SELECT id FROM sess_analysis WHERE sess_id = :sid AND topic_id = :tid"),
-            {"sid": sess_id, "tid": tid}
-        ).fetchone()
-        if not exists:
-            db.execute(
-                text("INSERT INTO sess_analysis (sess_id, topic_id, summary, note) VALUES (:sid, :tid, '', '')"),
-                {"sid": sess_id, "tid": tid}
-            )
-        # 2. client_topic 저장 (누적 이력)
-        if client_id:
+    # client_topic에만 저장 (내담자 신청 주제 이력 — 정보 차원)
+    if client_id:
+        for idx, tid in enumerate(topic_ids):
             db.execute(text("""
                 INSERT INTO client_topic (client_id, topic_id, prio)
                 VALUES (:cid, :tid, :prio)

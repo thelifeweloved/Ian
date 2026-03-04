@@ -1050,7 +1050,7 @@
             background: #a371f7;
         }
 
-        /* 미해결 이탈 세션 */
+        /* 미해결 조기 종료 세션 */
         .report-card-unresolved {
             display: flex;
             flex-direction: column;
@@ -1556,7 +1556,7 @@
             <div class="stat-card stat-churn">
                 <div class="stat-label stat-label-with-alert">
                     <i class="fa-solid fa-comment-medical kpi-alert-icon" aria-hidden="true"></i>
-                    진행 중 세션
+                    진행 중 상담
                 </div>
                 <div class="stat-value" id="kpi-sessions">0</div>
                 <div class="stat-label stat-label-sub">ACTIVE</div>
@@ -1567,22 +1567,22 @@
                 <div class="stat-label stat-label-sub">quality.score 평균</div>
             </div>
             <div class="stat-card stat-satisfy">
-                <div class="stat-label">미해결 참고 신호</div>
+                <div class="stat-label">미해결 주요 신호</div>
                 <div class="stat-value" id="kpi-alerts">0</div>
                 <div class="stat-label stat-label-sub">DETECTED</div>
             </div>
             <div class="stat-card stat-unassigned">
-                <div class="stat-label">주의·개선필요 내담자</div>
+                <div class="stat-label">주의·집중 관리 내담자</div>
                 <div class="stat-value" id="kpi-risk-clients">0</div>
-                <div class="stat-label stat-label-sub">주의 + 개선필요</div>
+                <div class="stat-label stat-label-sub">주의 + 집중 관리</div>
             </div>
         </div>
 
-        <!-- ② 우선 검토 세션 목록 -->
+        <!-- ② 우선 검토 내담자 목록 -->
         <section class="report-section" style="margin-top:24px;">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-                <h3 class="section-title">우선 검토 세션</h3>
-                <span style="font-size:0.8rem; color:#aab0be;">신호 강도 높은 순 · 개선필요 내담자 우선</span>
+                <h3 class="section-title">우선 검토 내담자</h3>
+                <span style="font-size:0.8rem; color:#aab0be;">신호 강도 높은 순 · 집중 관리 내담자 우선</span>
             </div>
             <div class="card report-table-card" style="padding:0; overflow:hidden;">
                 <!-- 헤더 행 -->
@@ -1625,7 +1625,7 @@
 
             <!-- 차트 행 2: 토픽별 세션 분포 (전체 너비) -->
             <div style="margin-bottom:20px;">
-                <h3 class="section-title" style="margin-bottom:10px;">내담자 고민 유형 분포 <span style="font-size:0.75rem;font-weight:400;color:#aab0be;margin-left:6px;">내담자가 직접 선택한 고민 주제</span></h3>
+                <h3 class="section-title" style="margin-bottom:10px;">고민 유형 현황 <span style="font-size:0.75rem;font-weight:400;color:#aab0be;margin-left:6px;">내담자가 직접 선택한 고민 주제</span></h3>
                 <div class="card report-card">
                     <div style="height:180px;">
                         <canvas id="chart-topic-dist"></canvas>
@@ -1670,11 +1670,11 @@
             </div>
         </section>
 
-        <!-- ⑤ 참고 신호 로그 (개선) -->
+        <!-- ⑤ 주요 신호 내역 (개선) -->
         <section class="report-section" style="margin-top:24px;">
             <div class="card report-table-card">
                 <div class="appt-header" style="margin-bottom:12px;">
-                    <h4 style="margin:0; font-size:0.95rem; color:#373f50; font-weight:600;">참고 신호 로그</h4>
+                    <h4 style="margin:0; font-size:0.95rem; color:#373f50; font-weight:600;">주요 신호 내역</h4>
                     <div class="appt-header-filters">
                         <select class="appt-filter-select" id="alertTypeFilter" title="신호 유형 필터">
                             <option value="">전체 유형</option>
@@ -1880,7 +1880,7 @@
             return list;
         }
 
-        // 3. 미해결 이탈 세션 추출
+        // 3. 미해결 조기 종료 세션 추출
         function getUnresolvedDropoutSessions() {
             const alerts = STATE.alerts.filter(a => a.status === 'DETECTED');
             const bySess = {};
@@ -1904,7 +1904,7 @@
             const typeClass = { DELAY: 'delay', SHORT: 'short', NEG_SPIKE: 'neg', RISK_WORD: 'risk' };
 
             if (items.length === 0) {
-                listEl.innerHTML = '<div class="unresolved-empty"><i class="fa-solid fa-circle-check"></i>미해결 이탈 세션이 없습니다.</div>';
+                listEl.innerHTML = '<div class="unresolved-empty"><i class="fa-solid fa-circle-check"></i>미해결 조기 종료 세션이 없습니다.</div>';
                 return;
             }
 
@@ -1991,7 +1991,7 @@
             const searchQ      = (document.getElementById('searchAlert')?.value.trim().toLowerCase()) || '';
 
             const typeColors = { CONTINUITY_SIGNAL:'#a78bfa', DELAY:'#f0a500', SHORT:'#58a6ff', NEG_SPIKE:'#e05252', RISK_WORD:'#c62828' };
-            const gradeCss   = { '안정':'background:#e8f5e9;color:#2e7d32;', '주의':'background:#fff8e1;color:#e65100;', '개선필요':'background:#fce4ec;color:#c62828;' };
+            const gradeCss   = { '안정':'background:#e8f5e9;color:#2e7d32;', '주의':'background:#fff8e1;color:#e65100;', '집중 관리':'background:#fce4ec;color:#c62828;' };
 
             // ── 내담자 단위로 집계 ──
             const clientMap = {};
@@ -2125,7 +2125,7 @@
                 type: 'bar',
                 data: {
                     labels,
-                    datasets: [{ label: '세션 수', data: counts,
+                    datasets: [{ label: '상담 건수', data: counts,
                         backgroundColor: noData ? ['#e8ecf4'] : labels.map((_, i) => colors[i % colors.length]),
                         borderRadius: 6, borderSkipped: false }]
                 },
@@ -2157,13 +2157,13 @@
                 : '0';
             el('kpi-quality').textContent = avgScore;
 
-            // 주의+개선필요 내담자 수 (client_grade 통계에서 합산)
+            // 주의+집중 관리 내담자 수 (client_grade 통계에서 합산)
             const riskClients = STATE.clientGrade
-                .filter(g => g.client_grade === '주의' || g.client_grade === '개선필요')
+                .filter(g => g.client_grade === '주의' || g.client_grade === '집중 관리')
                 .reduce((sum, g) => sum + Number(g.total || 0), 0);
             el('kpi-risk-clients').textContent = riskClients;
 
-            // ② 우선 검토 세션 렌더
+            // ② 우선 검토 내담자 렌더
             renderPrioritySessions();
 
             // 기존 로직 유지
@@ -2177,7 +2177,7 @@
                 data: {
                     labels: sortedQ.map(q => q.sess_id ? '세션' + q.sess_id : '-'),
                     datasets: [
-                        { label: '상담 흐름(flow)', data: sortedQ.map(q => q.flow),  borderColor: '#7389f4', backgroundColor: 'rgba(115,137,244,0.08)', fill: true, tension: 0.35, pointRadius: 3 },
+                        { label: '상담 진행 품질(flow)', data: sortedQ.map(q => q.flow),  borderColor: '#7389f4', backgroundColor: 'rgba(115,137,244,0.08)', fill: true, tension: 0.35, pointRadius: 3 },
                         { label: '품질 점수(score)', data: sortedQ.map(q => q.score), borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.08)',    fill: true, tension: 0.35, pointRadius: 3 }
                     ]
                 },
@@ -2192,12 +2192,12 @@
             const gradeData = [
                 STATE.clientGrade.find(g => g.client_grade === '안정')?.total || 0,
                 STATE.clientGrade.find(g => g.client_grade === '주의')?.total || 0,
-                STATE.clientGrade.find(g => g.client_grade === '개선필요')?.total || 0
+                STATE.clientGrade.find(g => g.client_grade === '집중 관리')?.total || 0
             ];
             const donutCfg = {
                 type: 'doughnut',
                 data: {
-                    labels: ['안정', '주의', '개선필요'],
+                    labels: ['안정', '주의', '집중 관리'],
                     datasets: [{ data: gradeData, backgroundColor: ['#3fb950','#f0a500','#e05252'], borderWidth: 2 }]
                 },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
@@ -2211,7 +2211,7 @@
             renderTopicChart("client");
         }
 
-        // ② 우선 검토 세션 렌더 함수
+        // ② 우선 검토 내담자 렌더 함수
         function renderPrioritySessions() {
             const container = document.getElementById('priority-client-list');
             if (!container) return;
@@ -2268,8 +2268,8 @@
                 return;
             }
 
-            // ── 정렬: 개선필요 > 주의 > 안정, 같은 등급이면 신호 강도 높은 순 ──
-            const gradeOrder = { '개선필요': 0, '주의': 1, '안정': 2 };
+            // ── 정렬: 집중 관리 > 주의 > 안정, 같은 등급이면 신호 강도 높은 순 ──
+            const gradeOrder = { '집중 관리': 0, '주의': 1, '안정': 2 };
             clientList.sort((a, b) => {
                 const ga = gradeOrder[a.client_status] ?? 3;
                 const gb = gradeOrder[b.client_status] ?? 3;
@@ -2279,7 +2279,7 @@
 
             // ── 헬퍼 함수들 ──
             const gradeBadge = s => {
-                const map = { '안정':'background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;', '주의':'background:#fff8e1;color:#e65100;border:1px solid #ffcc80;', '개선필요':'background:#fce4ec;color:#c62828;border:1px solid #f48fb1;' };
+                const map = { '안정':'background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;', '주의':'background:#fff8e1;color:#e65100;border:1px solid #ffcc80;', '집중 관리':'background:#fce4ec;color:#c62828;border:1px solid #f48fb1;' };
                 return `<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.73rem;font-weight:700;${map[s]||'background:#f0f0f0;color:#888;'}">${s||'-'}</span>`;
             };
             const miniBar = (v, color) => {
@@ -2334,7 +2334,7 @@
                 const topicTags = c.latest_topics.length
                     ? `<div style="margin-top:4px;">${c.latest_topics.slice(0,3).map(t=>`<span style="display:inline-block;padding:1px 7px;margin:1px;background:#ede9fe;color:#7c3aed;border-radius:4px;font-size:0.7rem;font-weight:600;">${escHtml(t)}</span>`).join('')}</div>`
                     : '';
-                const dropoutTag = c.has_dropout ? '<span style="display:inline-block;padding:1px 6px;background:#fce4ec;color:#c62828;border-radius:4px;font-size:0.68rem;font-weight:700;margin-left:4px;">이탈 이력</span>' : '';
+                const dropoutTag = c.has_dropout ? '<span style="display:inline-block;padding:1px 6px;background:#fce4ec;color:#c62828;border-radius:4px;font-size:0.68rem;font-weight:700;margin-left:4px;">조기 종료 이력</span>' : '';
 
                 return `<div style="display:grid;grid-template-columns:200px 90px 110px 110px 160px 90px auto;align-items:start;gap:8px;padding:14px 16px;border-bottom:1px solid #f2f3f7;">
                     <!-- 내담자 정보 -->
@@ -2411,7 +2411,22 @@
                 const st = (a.status||'').toUpperCase();
                 const sm = statusMap[st] || {cls:'background:#f0f0f0;color:#888;', label: st};
                 const cName = (STATE.counselors||[]).find(c=>c.id===a.counselor_id)?.name || a.counselor_name || '미배정';
-                const chatBtn = st==='CONFIRMED' ? `<a href="Chat_counselor.html?appt_id=${a.id}&counselor_id=${a.counselor_id}" style="display:inline-block;padding:4px 12px;background:#7389f4;color:#fff;border-radius:6px;font-size:0.78rem;font-weight:600;text-decoration:none;">상담 시작</a>` : '<span style="color:#ccc;font-size:0.8rem;">—</span>';
+                // 예약 시간 30분 전부터 "상담 시작" 활성화
+                let chatBtn = '<span style="color:#ccc;font-size:0.8rem;">—</span>';
+                if (st === 'CONFIRMED') {
+                    const apptTime = new Date(a.at);
+                    const now = new Date();
+                    const diffMin = (apptTime - now) / 60000; // 양수 = 아직 안 됨
+                    if (diffMin <= 30) {
+                        // 예약 30분 전 ~ 이후: 상담 시작 가능
+                        chatBtn = `<a href="Chat_counselor.html?appt_id=${a.id}&counselor_id=${a.counselor_id}" style="display:inline-block;padding:4px 12px;background:#7389f4;color:#fff;border-radius:6px;font-size:0.78rem;font-weight:600;text-decoration:none;">상담 시작</a>`;
+                    } else {
+                        // 아직 시간 안 됨: 예약 시간 표시
+                        const hm = apptTime.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+                        const md = apptTime.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
+                        chatBtn = `<span style="color:#7389f4;font-size:0.78rem;font-weight:600;">${md} ${hm}</span>`;
+                    }
+                }
                 return `<tr>
                     <td>${a.id}</td>
                     <td>${escHtml(a.client_name||String(a.client_id||'-'))}</td>
@@ -2549,7 +2564,7 @@
             const counselorNameEl = document.getElementById('displayCounselorName') || document.querySelector('.user-name');
             const counselorEmailEl = document.getElementById('displayCounselorEmail') || document.querySelector('.user-email');
             
-            if (counselorNameEl) counselorNameEl.textContent = localStorage.getItem('counselor_name') || '상담사';
+            if (counselorNameEl) counselorNameEl.textContent = (localStorage.getItem('counselor_name') || '상담사') + ' 상담사님';
             if (counselorEmailEl) counselorEmailEl.textContent = localStorage.getItem('counselor_email') || '이메일 정보 없음';
 
             // 데이터 초기 로딩

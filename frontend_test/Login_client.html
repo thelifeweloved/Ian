@@ -215,7 +215,11 @@
                 }).join('') + '</div>';
 
                 // 날짜 최솟값 오늘로 설정
-                const today = new Date().toISOString().split('T')[0];
+                // UTC 기준 toISOString()은 KST(+9)에서 어제 날짜가 나올 수 있어 로컬 기준으로 처리
+                const now = new Date();
+                const today = now.getFullYear() + '-' +
+                    String(now.getMonth()+1).padStart(2,'0') + '-' +
+                    String(now.getDate()).padStart(2,'0');
                 document.getElementById('apptDate').min = today;
                 document.getElementById('apptDate').value = today;
                 updateTimeSlots();
@@ -235,9 +239,30 @@
 
         function updateTimeSlots() {
             const timeSelect = document.getElementById('apptTime');
-            const slots = ['09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
-            timeSelect.innerHTML = '<option value="">시간 선택</option>' +
-                slots.map(t => `<option value="${t}">${t}</option>`).join('');
+            const allSlots = ['09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
+
+            // 오늘 날짜이면 현재 시각 이후 슬롯만 표시
+            const selectedDate = document.getElementById('apptDate').value;
+            const now = new Date();
+            const todayStr = now.getFullYear() + '-' +
+                String(now.getMonth()+1).padStart(2,'0') + '-' +
+                String(now.getDate()).padStart(2,'0');
+            const isToday = (selectedDate === todayStr);
+            const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+            const slots = allSlots.filter(t => {
+                if (!isToday) return true;
+                const [h, m] = t.split(':').map(Number);
+                return (h * 60 + m) > nowMinutes;
+            });
+
+            if (slots.length === 0) {
+                timeSelect.innerHTML = '<option value="">오늘은 예약 가능한 시간이 없습니다</option>';
+            } else {
+                timeSelect.innerHTML = '<option value="">시간 선택</option>' +
+                    slots.map(t => `<option value="${t}">${t}</option>`).join('');
+            }
+
             timeSelect.onchange = () => {
                 _selectedTime = timeSelect.value;
                 _selectedDate = document.getElementById('apptDate').value;
@@ -251,7 +276,8 @@
                 document.getElementById('btnStartCounseling').disabled = true;
                 return;
             }
-            const dateObj = new Date(_selectedDate);
+            const [_y,_m,_d] = _selectedDate.split('-');
+            const dateObj = new Date(+_y, +_m-1, +_d); // UTC 파싱 방지 (로컬 기준)
             const dateStr = dateObj.toLocaleDateString('ko-KR', {month:'long', day:'numeric', weekday:'short'});
             document.getElementById('summaryText').innerHTML =
                 `👨‍⚕️ <b>${_selectedCounselorName}</b> 상담사<br>📅 ${dateStr} ${_selectedTime}`;

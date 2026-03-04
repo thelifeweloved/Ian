@@ -271,6 +271,7 @@
                 <button type="button" class="btn btn-save" id="btnSave" title="상담사 의견 저장" disabled>
                     <i class="fa-solid fa-floppy-disk"></i> 저장
                 </button>
+                <button type="button" class="btn" id="btnEdit" style="display:none;">수정</button>
                 <span class="save-msg" id="saveMsg" aria-live="polite">
                     <i class="fa-solid fa-circle-check"></i> 저장되었습니다
                 </span>
@@ -440,27 +441,65 @@
                     fullChatWrap.scrollTop = fullChatWrap.scrollHeight;
                 }
 
-                // 메모 업데이트
-                if (topic.note) {
-                    const noteEl = document.getElementById('counselorNote');
-                    noteEl.value = topic.note;
-                    updateSaveButtonState();
-                }
+            // 메모 업데이트
+            if (topic.note) {
+                const noteEl = document.getElementById('counselorNote');
+                const btnEditEl = document.getElementById('btnEdit');
+
+                noteEl.value = topic.note;
+
+                // 메모가 있으면 읽기모드 + 수정버튼 표시
+                noteEl.readOnly = true;
+                if (btnEditEl) btnEditEl.style.display = 'inline-flex';
+
+                updateSaveButtonState();
+            } else {
+                const noteEl = document.getElementById('counselorNote');
+                const btnEditEl = document.getElementById('btnEdit');
+
+                // 메모가 없으면 바로 작성모드
+                noteEl.readOnly = false;
+                if (btnEditEl) btnEditEl.style.display = 'none';
+
+                updateSaveButtonState();
+            }
 
             } catch (error) {
                 console.error("리포트 데이터 로드 실패:", error);
             }
-        }
+            }
 
-        // 상담사 의견란 로직
-        const noteEl = document.getElementById('counselorNote');
-        const btnSaveEl = document.getElementById('btnSave');
-        
-        function updateSaveButtonState() {
-            btnSaveEl.disabled = !(noteEl.value || '').trim();
-        }
+            // 상담사 의견란 로직
+            const noteEl = document.getElementById('counselorNote');
+            const btnSaveEl = document.getElementById('btnSave');
 
-        noteEl.addEventListener('input', updateSaveButtonState);
+            function updateSaveButtonState() {
+                btnSaveEl.disabled = !(noteEl.value || '').trim();
+            }
+
+            noteEl.addEventListener('input', updateSaveButtonState);
+
+
+            // 수정 버튼
+            const btnEditEl = document.getElementById('btnEdit');
+
+            function setEditMode(on) {
+
+                noteEl.readOnly = !on;
+
+                if (!on) {
+                    btnSaveEl.disabled = true;
+                } else {
+                    updateSaveButtonState();
+                }
+            }
+
+            if (btnEditEl) {
+                btnEditEl.addEventListener('click', () => {
+                    setEditMode(true);
+                    noteEl.focus();
+                });
+            }
 
         // DB 영구 저장 기능 연동
         btnSaveEl.addEventListener('click', async () => {

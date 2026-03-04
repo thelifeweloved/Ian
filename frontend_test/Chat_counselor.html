@@ -211,6 +211,7 @@
                     <div class="title-wrap">
                         <h2 id="headerCounselorName">상담사</h2>
                         <div class="session-id" id="headerSessionId">SESS-WAIT · 상담 대기 중</div>
+                        <div id="headerClientInfo" style="font-size:0.78rem;color:#7389f4;font-weight:600;margin-top:3px;display:none;"></div>
                     </div>
                 </div>
                 <button type="button" class="btn-end-session" title="상담 종료"><i class="fa-solid fa-right-from-bracket"></i></button>
@@ -338,8 +339,8 @@
         const counselorId = localStorage.getItem('counselor_id') || 1;
         const counselorName = localStorage.getItem('counselor_name') || '상담사';
 
-        document.getElementById('displayCounselorName').innerText = counselorName;
-        document.getElementById('headerCounselorName').innerText = counselorName;
+        document.getElementById('displayCounselorName').innerText = counselorName + ' 상담사님';
+        document.getElementById('headerCounselorName').innerText = counselorName + ' 상담사님';
 
         const counselorEmail = localStorage.getItem('counselor_email') || '이메일 정보 없음';
         const emailEl = document.getElementById('displayCounselorEmail');
@@ -440,6 +441,19 @@
                     window._mwSessId = data.sess_id;
                     document.getElementById('headerSessionId').innerText = `SESS-${data.sess_id} · 실시간 상담 중`;
                     startSessionTimer();
+                    // 내담자 이름·ID 헤더 표시
+                    try {
+                        const dashRes = await fetch(`${API_BASE_URL}/sessions/${data.sess_id}/dashboard`);
+                        const dash = await dashRes.json();
+                        const cName = dash.session?.client_name || '';
+                        const cId   = dash.session?.client_id   || '';
+                        if (cName) {
+                            window._clientName = cName;
+                            const el = document.getElementById('headerClientInfo');
+                            el.innerText = `내담자: ${cName}  (ID: ${cId})`;
+                            el.style.display = 'block';
+                        }
+                    } catch(e) {}
 
                     // ✅ 폴링 시작 (메시지/상태 각각)
                     if (chatPollId) clearInterval(chatPollId);
@@ -552,7 +566,7 @@
             container.innerHTML = '';
             msgs.forEach(m => {
                 const isMe = m.speaker === 'COUNSELOR';
-                const who = isMe ? '상담사' : (m.speaker === 'SYSTEM' ? 'SYSTEM' : '내담자');
+                const who = isMe ? '상담사' : (m.speaker === 'SYSTEM' ? 'SYSTEM' : (window._clientName || '내담자'));
                 const cssClass = (m.speaker === 'COUNSELOR') ? 'counselor' : 'client';
                 const timeStr = new Date(m.at).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
 

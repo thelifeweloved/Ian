@@ -190,35 +190,46 @@ def run_core_features(
         use_llm=True,
     )
 
-    f2 = analyze_feature2(clova_client, dialog_text)
+    # ── HCX topic 분류용: DB에서 REGISTER 타입 topic 목록 로드 ──
+    topic_rows = db.execute(text("""
+        SELECT id, code, name, descr FROM topic
+        WHERE type = 'REGISTER' ORDER BY id
+    """)).mappings().all()
+    topic_list = [
+        {"id": int(r["id"]), "name": r["name"], "descr": r.get("descr") or ""}
+        for r in topic_rows
+    ]
+
+    # feature2: 요약 + HCX가 topic 직접 분류 (topics 넘기면 topic_id 자동 반환)
+    f2 = analyze_feature2(clova_client, dialog_text, topics=topic_list if topic_list else None)
     emotion_result = analyze_feature3(clova_client, msg_rows, batch_size=5)
     q4 = analyze_feature4(clova_client, dialog_text)
 
     # ── 3) DB 저장 ───────────────────────────
-    
-    # ✅ [신규 추가] 이 세션의 내담자가 선택한 고민 유형 중 우선순위(prio)가 가장 높은 것을 가져옵니다.
-    # 의 client_topic 테이블 참조
-    user_topic_id = db.execute(text("""
-        SELECT ct.topic_id 
-        FROM client_topic ct
-        JOIN sess s ON ct.client_id = s.client_id
-        WHERE s.id = :sid
-        ORDER BY ct.prio ASC LIMIT 1
-    """), {"sid": sess_id}).scalar()
-    
-    # 만약 선택한 토픽이 없다면 기존처럼 1(기타)을 기본값으로 사용합니다.
-    actual_topic_id = int(user_topic_id) if user_topic_id else 1
+
+    # HCX가 분류한 topic_id 사용 (분류 실패 시 내담자 선택값 → 없으면 ETC)
+    ai_topic_id = f2.get("topic_id")
+    if not ai_topic_id:
+        # fallback: 내담자가 선택한 topic 중 우선순위 1위
+        ai_topic_id = db.execute(text("""
+            SELECT ct.topic_id
+            FROM client_topic ct
+            JOIN sess s ON ct.client_id = s.client_id
+            WHERE s.id = :sid
+            ORDER BY ct.prio ASC LIMIT 1
+        """), {"sid": sess_id}).scalar()
+    actual_topic_id = int(ai_topic_id) if ai_topic_id else 1
 
     insert_alert_rows(db, f1_alert_rows)
 
-    # ✅ [수정] topic_id=1 고정값을 actual_topic_id 변수로 교체합니다.
+    # sess_analysis에 HCX 분류 topic + 요약 저장
     upsert_sess_analysis(
         db,
         sess_id=sess_id,
         topic_id=actual_topic_id,
         summary=str(f2.get("summary", "")),
         note="",
-    ) #
+    )
 
     insert_text_emotions(db, emotion_result.get("items", []))
 
