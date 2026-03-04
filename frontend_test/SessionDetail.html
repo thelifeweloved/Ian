@@ -217,7 +217,9 @@
         
 
         <section class="report-section">
-            <h3>AI 분석 요약 및 상담 참고자료</h3>
+            <h3>AI 분석 요약 및 상담 참고자료
+                <button id="btnRunAnalysis" onclick="runAnalysis()" style="margin-left:12px;padding:4px 14px;font-size:0.78rem;border-radius:8px;border:1px solid #7389f4;background:#f0f3ff;color:#5c6fd6;cursor:pointer;font-weight:600;">🔄 재분석</button>
+            </h3>
             <div class="ai-summary-box" id="aiSummary" style="color:#aab0be;">HCX 분석 완료 후 요약이 표시됩니다.</div>
         </section>
 
@@ -372,7 +374,12 @@
 
                 // ── AI 요약 ──
                 if (topic.summary) {
-                    document.getElementById('aiSummary').textContent = topic.summary;
+                    const el = document.getElementById('aiSummary');
+                    el.style.color = '';
+                    el.textContent = topic.summary;
+                } else {
+                    // summary 없으면 자동으로 분석 요청
+                    runAnalysis();
                 }
 
                 const allMsgs   = msgs.items || [];
@@ -543,6 +550,30 @@
         document.getElementById('btnPrint').addEventListener('click', () => window.print());
 
         // 페이지 로드 시 API 데이터 가져오기 실행
+
+        // ── AI 분석 실행 ──────────────────────────────────────────
+        async function runAnalysis() {
+            const btn = document.getElementById('btnRunAnalysis');
+            const summaryEl = document.getElementById('aiSummary');
+            if (btn) { btn.disabled = true; btn.textContent = '분석 중...'; }
+            summaryEl.style.color = '#aab0be';
+            summaryEl.textContent = 'HCX 분석을 요청하고 있습니다...';
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/sessions/${sessId}/analysis`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (!res.ok) throw new Error(`서버 오류 ${res.status}`);
+                // 분석 완료 후 대시보드 새로고침
+                await fetchReportData();
+            } catch(e) {
+                summaryEl.style.color = '#ff4d4f';
+                summaryEl.textContent = `분석 요청 실패: ${e.message}`;
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '🔄 재분석'; }
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', fetchReportData);
     </script>
 </body>

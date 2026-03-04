@@ -65,21 +65,54 @@ def insert_text_emotions(db: Session, emotion_items: List[Dict[str, Any]]) -> No
 
 
 def upsert_sess_analysis(db: Session, *, sess_id: int, topic_id: int, summary: str, note: str) -> None:
-    db.execute(
-        text("""
-            INSERT INTO sess_analysis (sess_id, topic_id, summary, note)
-            VALUES (:sess_id, :topic_id, :summary, :note)
-            ON DUPLICATE KEY UPDATE
-                summary = VALUES(summary),
-                note    = VALUES(note)
-        """),
-        {
-            "sess_id": int(sess_id),
-            "topic_id": int(topic_id),
-            "summary": summary,
-            "note": note,
-        },
-    )
+    """
+    sess_id당 항상 1행만 유지한다.
+    - 기존 행이 없으면 → 새로 insert
+    - 기존 행이 있으면:
+        - 새 summary가 더 길면 → 기존 행 전부 삭제 후 새로 insert (최신 + 풍부한 내용)
+        - 기존 summary가 더 길거나 같으면 → topic_id만 최신으로 업데이트 (summary 유지)
+    """
+    existing = db.execute(
+        text("SELECT id, summary FROM sess_analysis WHERE sess_id = :sess_id ORDER BY id DESC LIMIT 1"),
+        {"sess_id": int(sess_id)},
+    ).mappings().first()
+
+    new_summary = summary or ""
+    old_summary = (existing["summary"] or "") if existing else ""
+
+    if not existing:
+        # 기존 행 없음 → 새로 insert
+        db.execute(
+            text("""
+                INSERT INTO sess_analysis (sess_id, topic_id, summary, note)
+                VALUES (:sess_id, :topic_id, :summary, :note)
+            """),
+            {"sess_id": int(sess_id), "topic_id": int(topic_id), "summary": new_summary, "note": note},
+        )
+
+    elif len(new_summary) >= len(old_summary):
+        # 새 summary가 더 길거나 같음 → 기존 전부 삭제 후 새로 insert
+        db.execute(text("DELETE FROM sess_analysis WHERE sess_id = :sess_id"), {"sess_id": int(sess_id)})
+        db.execute(
+            text("""
+                INSERT INTO sess_analysis (sess_id, topic_id, summary, note)
+                VALUES (:sess_id, :topic_id, :summary, :note)
+            """),
+            {"sess_id": int(sess_id), "topic_id": int(topic_id), "summary": new_summary, "note": note},
+        )
+        logger.info(f"[upsert_sess_analysis] sess_id={sess_id} summary 갱신 ({len(old_summary)} → {len(new_summary)}자)")
+
+    else:
+        # 기존 summary가 더 김 → topic_id만 최신으로, summary는 유지
+        db.execute(
+            text("DELETE FROM sess_analysis WHERE sess_id = :sess_id AND id != :keep_id"),
+            {"sess_id": int(sess_id), "keep_id": int(existing["id"])},
+        )
+        db.execute(
+            text("UPDATE sess_analysis SET topic_id = :topic_id WHERE id = :keep_id"),
+            {"topic_id": int(topic_id), "keep_id": int(existing["id"])},
+        )
+        logger.info(f"[upsert_sess_analysis] sess_id={sess_id} topic_id만 갱신, summary 유지 ({len(old_summary)}자 > {len(new_summary)}자)")
 
 
 def upsert_quality(db: Session, *, sess_id: int, flow: float, score: float) -> None:
