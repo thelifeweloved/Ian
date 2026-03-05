@@ -511,11 +511,11 @@ def recent_alerts(counselor_id: int = Query(..., ge=1), db: Session = Depends(ge
 @app.get("/appointments")
 def get_appointments(counselor_id: Optional[int] = Query(None), db: Session = Depends(get_db)):
     sql = """
-        SELECT a.id, a.counselor_id, c.name AS client_name, a.at, a.status, a.created_at
+        SELECT a.id, a.client_id, a.counselor_id, c.name AS client_name, a.at, a.status, a.created_at
         FROM appt a 
         JOIN client c ON a.client_id = c.id 
         WHERE (:cid IS NULL OR a.counselor_id = :cid) 
-        ORDER BY a.at ASC
+        ORDER BY a.at DESC
     """
     result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}

@@ -335,9 +335,12 @@
         // ★ 파일 전용 독립 API 경로 설정 유지
         const ANALYZE_URL = `http://${window.location.hostname}:8001/analyze`;
 
-        const clientId = localStorage.getItem('client_id') || 1;
-        const counselorId = localStorage.getItem('counselor_id') || 1;
+        const urlParams = new URLSearchParams(location.search);
+        const apptId = urlParams.get('appt_id');
+        const counselorId = urlParams.get('counselor_id') || localStorage.getItem('counselor_id') || 1;
         const counselorName = localStorage.getItem('counselor_name') || '상담사';
+
+        let clientId = null; // initSession에서 appt 조회 후 설정
 
         document.getElementById('displayCounselorName').innerText = counselorName + ' 상담사님';
         document.getElementById('headerCounselorName').innerText = counselorName + ' 상담사님';
@@ -431,7 +434,16 @@
 
         async function initSession() {
             try {
-                const res = await fetch(`${API_BASE_URL}/client/start-session`, {
+                // ── appt_id로 client_id 확인 ──
+                if (apptId) {
+                    const apptRes = await fetch(`${API_BASE_URL}/appointments?counselor_id=${counselorId}`);
+                    const apptData = await apptRes.json();
+                    const appt = (apptData.items || []).find(a => String(a.id) === String(apptId));
+                    if (appt) clientId = appt.client_id;
+                }
+                if (!clientId) clientId = localStorage.getItem('client_id') || 1;
+
+        const res = await fetch(`${API_BASE_URL}/client/start-session`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ client_id: Number(clientId), counselor_id: Number(counselorId) })
