@@ -11,7 +11,7 @@ git pull origin main
 
 echo "==> install requirements"
 source "$APP_DIR/venv/bin/activate"
-pip install -r requirements.txt
+pip install --no-cache-dir -r requirements.server.txt
 
 echo "==> restart service"
 sudo systemctl restart "$SERVICE"
