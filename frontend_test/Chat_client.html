@@ -10,6 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,400&display=swap" rel="stylesheet">
     <style>
+        /* 기존 스타일 유지 (생략 없음) */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; }
         body { display: flex; background: #f0f2f5; height: 100vh; overflow: hidden; }
         .sidebar { width: 280px; background: #373f50; color: white; display: flex; flex-direction: column; padding: 40px 20px; flex-shrink: 0; transition: width 0.25s ease, padding 0.25s ease; position: relative; box-shadow: 4px 0 24px rgba(0,0,0,0.06); }
@@ -78,6 +79,7 @@
         .chat-input-row .btn-send:hover { opacity: 0.95; transform: translateY(-1px); }
         .chat-input-row .btn-icon { flex-shrink: 0; width: 44px; height: 44px; border: 2px solid #2a2d32; border-radius: 12px; background: #fff; color: #6b7080; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: all 0.2s; }
         .chat-input-row .btn-icon:hover { background: #f5f5f5; color: #555; }
+        .chat-input-row .btn-icon.on { background: #E5C76B; color: #1a1a1a; border-color: #E5C76B; }
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; }
         .modal-overlay.show { display: flex; }
         .modal-box { background: #fff; border-radius: 16px; padding: 28px; max-width: 380px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); text-align: center; }
@@ -98,6 +100,30 @@
         .modal-one-line-wrap label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 8px; }
         .modal-one-line-input { width: 100%; padding: 12px 14px; border: 1px solid #dce0e6; border-radius: 10px; font-size: 0.95rem; outline: none; box-sizing: border-box; }
         .modal-one-line-input:focus { border-color: #E5C76B; }
+        .source-select-box { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+        .source-btn { display: flex; align-items: center; gap: 14px; padding: 16px 20px; border: 2px solid #e8eaef; border-radius: 12px; background: #fafbfc; cursor: pointer; transition: all 0.2s; text-align: left; width: 100%; }
+        .source-btn:hover { border-color: #7389f4; background: #f0f2ff; }
+        .source-btn .src-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .source-btn.webcam-btn .src-icon { background: #e8eeff; color: #5c6fd6; }
+        .source-btn.file-btn .src-icon { background: #e6f9f0; color: #1a7f5a; }
+        .source-btn .src-title { font-size: 0.95rem; font-weight: 700; color: #222; margin-bottom: 2px; }
+        .source-btn .src-sub { font-size: 0.78rem; color: #999; }
+        .chat-right-panel { width: 340px; flex-shrink: 0; background: #fff; border-left: 1px solid #e8eaef; display: flex; flex-direction: column; overflow: hidden; box-shadow: -4px 0 24px rgba(0,0,0,0.04); }
+        .panel-section { padding: 20px; border-bottom: 1px solid #f0f1f5; }
+        .panel-title { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; color: #8b92a0; margin-bottom: 12px; }
+        .video-end-wrap { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+        .btn-video-end { width: 100%; padding: 8px 12px; border: none; border-radius: 8px; background: #1a237e; color: #fff; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: background 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+        .btn-video-end:hover { background: #283593; }
+        .live-feed-wrap { background: #0d0e10; border-radius: 12px; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; border: 1px solid #2a2d32; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03), inset 0 2px 20px rgba(0,0,0,0.5), 0 4px 20px rgba(0,0,0,0.15); }
+        .live-feed-wrap .placeholder { color: #6b7080; font-size: 0.9rem; font-weight: 500; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center; }
+        .live-feed-wrap .placeholder .icon-wrap { width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; }
+        .live-feed-wrap .placeholder .icon-wrap i { font-size: 1.75rem; color: #4a4e58; }
+        .live-feed-wrap video { width: 100%; height: 100%; object-fit: cover; border-radius: 0; }
+        .live-feed-wrap .badge-live { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); color: #fff; font-size: 0.65rem; font-weight: 700; padding: 6px 12px; border-radius: 6px; letter-spacing: 0.08em; display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.1); }
+        .live-feed-wrap .badge-live .dot { width: 6px; height: 6px; border-radius: 50%; background: #f44336; animation: livePulse 1.5s ease-in-out infinite; }
+        @keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(0.9); } }
+        @media (max-width: 1024px) { .chat-right-panel { width: 280px; } }
+        @media (max-width: 768px) { .chat-right-panel { display: none; } .chat-main { border-radius: 0; } }
         .chat-msg .bubble img { max-width: 100%; max-height: 300px; border-radius: 8px; margin-top: 8px; display: block; cursor: pointer; }
 
         /* ── 고민 유형 선택 모달 ── */
@@ -163,14 +189,72 @@
             <div class="chat-messages" id="chatMessages"></div>
 
             <div class="chat-input-area">
+                <div id="videoActiveBar" style="display:none;background:#1a237e;color:#fff;font-size:0.8rem;font-weight:600;padding:6px 14px;border-radius:8px 8px 0 0;align-items:center;justify-content:space-between;">
+                    <span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f44336;margin-right:6px;animation:livePulse 1.5s infinite;"></span>영상 전송 중</span>
+                    <button type="button" id="btnVideoEnd" onclick="stopVideo()" style="background:none;border:none;color:#fff;font-size:0.8rem;cursor:pointer;text-decoration:underline;">영상종료</button>
+                </div>
                 <div class="chat-input-row">
                     <textarea id="messageInput" placeholder="상담사에게 마음 편히 고민을 말해보세요." rows="1"></textarea>
                     <button type="button" class="btn-icon" id="btnImage" title="이미지"><i class="fa-solid fa-image"></i></button>
+                    <button type="button" class="btn-icon" id="btnVideo" title="영상"><i class="fa-solid fa-video"></i></button>
                     <button type="button" class="btn-send" id="btnSend">전송</button>
                 </div>
             </div>
 
+            <div class="modal-overlay" id="recordingConsentModal">
+                <div class="modal-box" style="max-width:420px;text-align:left;">
+                    <div class="modal-title" style="text-align:center;margin-bottom:16px;">개인정보 수집 및 이용 동의</div>
+                    <div class="modal-text" style="margin-bottom:18px;">원활한 상담 서비스 제공을 위해 아래 항목에 동의해 주세요.</div>
+                    <div style="border:1px solid #e8ecf4;border-radius:10px;padding:14px 16px;margin-bottom:12px;">
+                        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+                            <input type="checkbox" id="consentChat" style="margin-top:3px;accent-color:#7389f4;" required>
+                            <span>
+                                <strong style="color:#333;">[필수] 채팅 내용 저장 동의</strong><br>
+                                <span style="font-size:0.82rem;color:#888;">상담 내용은 서비스 품질 향상 및 상담사 참고용으로 저장됩니다.</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div style="border:1px solid #e8ecf4;border-radius:10px;padding:14px 16px;margin-bottom:20px;">
+                        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+                            <input type="checkbox" id="consentVideo" style="margin-top:3px;accent-color:#7389f4;">
+                            <span>
+                                <strong style="color:#333;">[선택] 영상 녹화 동의</strong><br>
+                                <span style="font-size:0.82rem;color:#888;">얼굴 감정 분석을 위해 상담 중 영상이 사용될 수 있습니다. 동의 시 웹캠/영상 연결이 활성화됩니다.</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="modal-actions" style="flex-direction:column;gap:8px;">
+                        <button type="button" class="btn-confirm" id="recordingConsentConfirm" disabled style="width:100%;opacity:0.5;">확인</button>
+                        <button type="button" class="btn-cancel" style="width:100%;" onclick="this.closest('.modal-overlay').classList.remove('show')">취소하기</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-overlay" id="videoSourceModal">
+                <div class="modal-box">
+                    <div class="modal-title">영상 소스 선택</div>
+                    <div class="source-select-box">
+                        <button type="button" class="source-btn webcam-btn" id="btnSelectWebcam">
+                            <span class="src-icon"><i class="fa-solid fa-camera"></i></span>
+                            <span>
+                                <div class="src-title">📷 웹캠</div>
+                                <div class="src-sub">카메라로 실시간 데이터 전송</div>
+                            </span>
+                        </button>
+                        <button type="button" class="source-btn file-btn" id="btnSelectFile">
+                            <span class="src-icon"><i class="fa-solid fa-film"></i></span>
+                            <span>
+                                <div class="src-title">🎬 동영상 파일</div>
+                                <div class="src-sub">mp4, mov 등 파일로 시연 전송</div>
+                            </span>
+                        </button>
+                    </div>
+                    <button type="button" class="btn-cancel" style="width:100%;padding:10px;border-radius:10px;border:1px solid #e0e4f0;background:#fff;color:#666;font-size:0.9rem;cursor:pointer;" onclick="this.closest('.modal-overlay').classList.remove('show')">취소</button>
+                </div>
+            </div>
+            
             <input type="file" id="imageFileInput" accept="image/*" style="display:none;">
+            <input type="file" id="videoFileInput" accept="video/*" style="display:none;">
 
             <!-- 고민 유형 선택 팝업 (채팅 입장 시 표시) -->
             <div class="modal-overlay topic-modal-overlay" id="topicSelectModal">
@@ -227,12 +311,18 @@
                 </div>
             </div>
         </main>
+        
+        <!-- localVideo: 화면에 안 보이지만 백그라운드 스트리밍용 -->
+        <video id="localVideo" playsinline autoplay muted style="display:none;position:absolute;width:0;height:0;"></video>
     </div>
 
     <script>
-        const ANALYZE_URL = `http://${window.location.hostname}:8001/analyze`;
-        const clientId = localStorage.getItem('client_id') || 1; 
-        const counselorId = localStorage.getItem('counselor_id') || 1; 
+        /* [중요] config.js에서 정의된 API_BASE_URL을 사용합니다. 
+           만약 ReferenceError가 발생한다면 config.js 로드 여부를 확인하세요. */
+        
+        const _cparam = new URLSearchParams(window.location.search);
+        const clientId = _cparam.get('client_id') || localStorage.getItem('client_id') || 1; 
+        const counselorId = _cparam.get('counselor_id') || localStorage.getItem('counselor_id') || 1; 
         const clientName = localStorage.getItem('client_name') || '내담자';
 
         let windowSessId = null;
@@ -251,19 +341,24 @@
         });
 
         async function initSession() {
+            // 1. [추가] localStorage에서 이름과 ID를 가져와 화면에 표시
             const storedName = localStorage.getItem('client_name');
             const storedId = localStorage.getItem('client_id');
 
             if (storedName) {
+                // 사이드바나 프로필 영역의 이름 변경
                 const userNameEl = document.querySelector('.user-name');
                 if (userNameEl) userNameEl.textContent = storedName;
             }
             if (storedId) {
+                // 이메일 자리에 ID 표시 (선택 사항)
                 const userEmailEl = document.querySelector('.user-email');
                 if (userEmailEl) userEmailEl.textContent = `ID: ${storedId}`;
             }
 
-            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : window.location.origin;
+            // --- 아래는 기존 로직 그대로 유지 ---
+            // [체크] API_BASE_URL이 존재하지 않을 경우를 대비한 안전장치
+            const baseUrl = API_BASE_URL;
             
             try {
                 const res = await fetch(`${baseUrl}/client/start-session`, {
@@ -274,11 +369,13 @@
                 const data = await res.json();
                 if (data.sess_id) {
                     windowSessId = data.sess_id;
+                    sessionStorage.setItem('mw_sess_id', String(data.sess_id)); // 새로고침 대비 저장
                     document.getElementById('headerSessionId').innerText = `SESS-${data.sess_id} · 상담 진행 중`;
+                    document.getElementById('chatMessages').innerHTML = ''; // 이전 채팅 초기화
+                    lastMsgCount = 0;
                     setInterval(fetchMessages, 2000);
-                    startHeartbeat();
-                    startBackgroundVideo(); // 백그라운드 감정 분석 시작
-                    loadAndShowTopicModal();
+                    startHeartbeat();  // heartbeat 시작
+                    loadAndShowTopicModal(); // 고민 유형 선택 모달 표시
                 }
             } catch (e) { console.error("세션 실패:", e); }
         }
@@ -306,7 +403,7 @@
         async function fetchMessages() {
             if(!windowSessId || isPolling) return;
             isPolling = true;
-            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : window.location.origin;
+            const baseUrl = API_BASE_URL;
             try {
                 const res = await fetch(`${baseUrl}/sessions/${windowSessId}/messages?limit=100`);
                 const data = await res.json();
@@ -316,7 +413,7 @@
         }
 
         async function postMessage(payload) {
-            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : window.location.origin;
+            const baseUrl = API_BASE_URL;
             try {
                 await fetch(`${baseUrl}/messages`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -348,57 +445,251 @@
             }
         });
 
-        // 영상 백그라운드 분석 (UI 없이 자동 시작)
-        const localVideo = document.createElement('video');
-        localVideo.autoplay = true; localVideo.muted = true; localVideo.playsInline = true;
-        localVideo.style.display = 'none';
-        document.body.appendChild(localVideo);
+        // 영상 로직
+        const btnVideo = document.getElementById('btnVideo');
+        const recordingModal = document.getElementById('recordingConsentModal');
+        const sourceModal = document.getElementById('videoSourceModal');
+        const localVideo = document.getElementById('localVideo');
         let analysisTimer = null;
+        let _rafRunning = false;
+        let _rafCanvas = null, _rafCtx = null;
+        let _faceWs = null;      // DeepFace 분석용 WebSocket
+        let _signalWs = null;    // WebRTC 시그널링용 WebSocket
+        let _pc = null;          // RTCPeerConnection
 
-        function startBackgroundVideo() {
-            navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-                .then(stream => {
-                    localVideo.srcObject = stream;
-                    analysisTimer = setInterval(analyzeFrame, 1000);
-                })
-                .catch(() => {}); // 카메라 거부 시 조용히 무시
+        btnVideo.addEventListener('click', () => {
+            if (btnVideo.classList.contains('on')) stopVideo();
+            else if (!_consentShown) {
+                // 동의창 안 봤으면 동의창 먼저
+                showConsentModalOnce();
+            } else if (document.getElementById('consentVideo') && document.getElementById('consentVideo').checked) {
+                // 영상 동의 했으면 바로 소스 선택
+                sourceModal.classList.add('show');
+            } else {
+                // 영상 미동의 → 안내
+                alert('영상 녹화 동의를 하지 않으셨습니다. 동의창에서 영상 녹화 항목을 체크해주세요.');
+            }
+        });
+
+        // ── 동의창 1회 표시 플래그 ──
+        let _consentShown = false;
+        function showConsentModalOnce() {
+            if (_consentShown) return;
+            _consentShown = true;
+            // 체크박스 초기화
+            document.getElementById('consentChat').checked = false;
+            document.getElementById('consentVideo').checked = false;
+            document.getElementById('recordingConsentConfirm').disabled = true;
+            document.getElementById('recordingConsentConfirm').style.opacity = '0.5';
+            recordingModal.classList.add('show');
         }
 
-        async function analyzeFrame() {
-            if (!windowSessId || !localVideo.srcObject) return;
-            const canvas = document.createElement('canvas');
-            canvas.width = 320; canvas.height = 240;
-            canvas.getContext('2d').drawImage(localVideo, 0, 0, 320, 240);
-            const b64 = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
-            try {
-                fetch(ANALYZE_URL, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: String(windowSessId), image_base64: 'data:image/jpeg;base64,' + b64, sess_db_id: windowSessId })
+        // 필수 체크박스(채팅 저장) 체크 시 확인 버튼 활성화
+        document.getElementById('consentChat').addEventListener('change', function() {
+            const btn = document.getElementById('recordingConsentConfirm');
+            btn.disabled = !this.checked;
+            btn.style.opacity = this.checked ? '1' : '0.5';
+        });
+
+        document.getElementById('recordingConsentConfirm').addEventListener('click', async () => {
+            const videoConsented = document.getElementById('consentVideo').checked;
+            recordingModal.classList.remove('show');
+
+            // ── ok_text / ok_face 서버에 저장 ──
+            if (windowSessId) {
+                try {
+                    const baseUrl = API_BASE_URL;
+                    await fetch(`${baseUrl}/sessions/${windowSessId}/consent`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ok_text: true, ok_face: videoConsented })
+                    });
+                } catch(e) { console.error('consent 저장 실패:', e); }
+            }
+
+            if (videoConsented) {
+                // 영상 동의 → 소스 선택 모달
+                sourceModal.classList.add('show');
+            }
+            // 영상 미동의 → 그냥 닫힘 (채팅만)
+        });
+
+        document.getElementById('btnSelectWebcam').addEventListener('click', () => {
+            sourceModal.classList.remove('show');
+            
+            // 1. 브라우저가 카메라 API를 지원하는지 (보안 환경인지) 확인
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert("웹캠 기능을 사용할 수 없는 환경입니다.\n(원인: 브라우저 주소창이 http://127.0.0.1 이거나 https 환경인지 확인해주세요.)");
+                return;
+            }
+
+            // 2. 카메라 호출 및 에러 원인 분석
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    localVideo.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:320px;height:240px;pointer-events:none;';
+                    localVideo.srcObject = stream;
+                    localVideo.play().catch(() => {});
+                    onVideoStart(stream);
+                })
+                .catch(err => {
+                    console.error("웹캠 연결 에러:", err);
+                    if (err.name === 'NotAllowedError') {
+                        alert("카메라 권한이 차단되었습니다.\n주소창 왼쪽의 '자물쇠' 아이콘을 눌러 카메라 권한을 '허용'으로 변경해주세요.");
+                    } else if (err.name === 'NotFoundError') {
+                        alert("연결된 카메라 장치를 찾을 수 없습니다.\n카메라가 컴퓨터에 잘 연결되어 있는지 확인해주세요.");
+                    } else if (err.name === 'NotReadableError') {
+                        alert("카메라를 불러올 수 없습니다.\n줌(Zoom)이나 다른 프로그램이 카메라를 이미 사용 중인지 확인하고 종료해주세요.");
+                    } else {
+                        alert("웹캠 로드 실패: " + err.message);
+                    }
                 });
-            } catch (e) {}
+        });
+
+        document.getElementById('btnSelectFile').addEventListener('click', () => {
+            sourceModal.classList.remove('show');
+            document.getElementById('videoFileInput').click();
+        });
+
+        document.getElementById('videoFileInput').addEventListener('change', function() {
+            if (this.files[0]) {
+                localVideo.src = URL.createObjectURL(this.files[0]);
+                localVideo.loop = true;
+                localVideo.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:320px;height:240px;pointer-events:none;';
+                localVideo.oncanplay = () => {
+                    localVideo.play().catch(() => {});
+                    // 파일 영상: captureStream으로 MediaStream 생성
+                    const stream = localVideo.captureStream ? localVideo.captureStream(30) : null;
+                    onVideoStart(stream);
+                    localVideo.oncanplay = null;
+                };
+            }
+        });
+
+        // ── DeepFace 분석용 WebSocket ──
+        function openFaceWs() {
+            if (_faceWs && _faceWs.readyState <= 1) return;
+            const protocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
+            const wsHost = API_BASE_URL.replace(/^https?:\/\//, '');
+            _faceWs = new WebSocket(`${protocol}://${wsHost}/ws/analyze/${windowSessId}`);
+            _faceWs.onerror = () => { _faceWs = null; };
+            _faceWs.onclose = () => { _faceWs = null; };
+        }
+        function closeFaceWs() {
+            if (_faceWs) { try { _faceWs.close(); } catch(e) {} _faceWs = null; }
+        }
+
+        // ── WebRTC 시그널링 ──
+        function openSignalWs(onOpen) {
+            const protocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
+            const wsHost = API_BASE_URL.replace(/^https?:\/\//, '');
+            _signalWs = new WebSocket(`${protocol}://${wsHost}/ws/signal/${windowSessId}/client`);
+            _signalWs.onopen = onOpen;
+            _signalWs.onmessage = async (e) => {
+                const msg = JSON.parse(e.data);
+                if (!_pc) return;
+                if (msg.type === 'answer') {
+                    await _pc.setRemoteDescription(new RTCSessionDescription(msg));
+                } else if (msg.type === 'candidate' && msg.candidate) {
+                    try { await _pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(_) {}
+                }
+            };
+            _signalWs.onerror = () => { _signalWs = null; };
+            _signalWs.onclose = () => { _signalWs = null; };
+        }
+
+        async function startWebRTC(stream) {
+            if (!stream) return; // captureStream 미지원 브라우저면 WebRTC 스킵
+            _pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            stream.getTracks().forEach(t => _pc.addTrack(t, stream));
+            _pc.onicecandidate = (e) => {
+                if (e.candidate && _signalWs && _signalWs.readyState === WebSocket.OPEN) {
+                    _signalWs.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+                }
+            };
+            openSignalWs(async () => {
+                const offer = await _pc.createOffer();
+                await _pc.setLocalDescription(offer);
+                _signalWs.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+            });
+        }
+
+        function stopWebRTC() {
+            if (_pc) { _pc.close(); _pc = null; }
+            if (_signalWs) { try { _signalWs.close(); } catch(_) {} _signalWs = null; }
+        }
+
+        // ── 영상 시작/종료 ──
+        function onVideoStart(stream) {
+            document.getElementById('videoActiveBar').style.display = 'flex';
+            btnVideo.classList.add('on');
+            btnVideo.style.color = '#E5C76B';
+            // WebRTC: 영상 P2P 전송
+            startWebRTC(stream);
+            // DeepFace: 분석용 캔버스 캡처 (별도)
+            openFaceWs();
+            _rafRunning = true;
+            _rafCanvas = document.createElement('canvas');
+            _rafCanvas.width = 320; _rafCanvas.height = 240;
+            _rafCtx = _rafCanvas.getContext('2d');
+            analysisTimer = setInterval(captureAndSend, 1000); // 분석은 1초마다
+        }
+
+        function stopVideo() {
+            if (localVideo.srcObject) localVideo.srcObject.getTracks().forEach(t => t.stop());
+            localVideo.srcObject = null; localVideo.src = '';
+            localVideo.style.cssText = 'display:none;position:absolute;width:0;height:0;';
+            document.getElementById('videoActiveBar').style.display = 'none';
+            btnVideo.classList.remove('on');
+            btnVideo.style.color = '';
+            _rafRunning = false;
+            clearInterval(analysisTimer);
+            analysisTimer = null;
+            stopWebRTC();
+            closeFaceWs();
+        }
+
+        // DeepFace 분석용 캡처 (1초마다, 영상 전송과 완전 분리)
+        function captureAndSend() {
+            if (!_rafRunning) return;
+            if (!windowSessId) return;
+            if (!_faceWs || _faceWs.readyState !== WebSocket.OPEN) { openFaceWs(); return; }
+            if (!localVideo.videoWidth) return;
+            if (_faceWs.bufferedAmount > 64000) return;
+            try {
+                _rafCtx.drawImage(localVideo, 0, 0, 320, 240);
+                const b64 = _rafCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+                _faceWs.send(JSON.stringify({
+                    image_base64: 'data:image/jpeg;base64,' + b64,
+                    sess_db_id: windowSessId
+                }));
+            } catch(e) { _faceWs = null; }
         }
 
         document.getElementById('btnSend').addEventListener('click', sendMessage);
         document.getElementById('messageInput').addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-
+        
         // ── 상담 종료 로직 ──
-        let _selectedSat = null;
+        let _selectedSat = null;  // null / 0 / 1
 
+        // 종료 버튼 → 모달 열기
         document.querySelector('.btn-end-session').addEventListener('click', () => {
             _selectedSat = null;
             resetSatButtons();
             document.getElementById('endSessionModal').classList.add('show');
         });
 
+        // 취소 버튼
         document.getElementById('endSessionCancel').addEventListener('click', () => {
             document.getElementById('endSessionModal').classList.remove('show');
         });
 
+        // 만족도 선택
         function selectSat(val, btn) {
             _selectedSat = val;
             resetSatButtons();
             btn.style.borderColor = val === 1 ? '#4caf50' : '#e05252';
             btn.style.background  = val === 1 ? '#e8f5e9' : '#fce4ec';
+            // 확인 버튼 활성화
             const confirmBtn = document.getElementById('endSessionConfirm');
             confirmBtn.disabled = false;
             confirmBtn.style.opacity = '1';
@@ -413,16 +704,18 @@
             });
         }
 
+        // 확인 버튼 → close API + sat_note 같이 전송
         document.getElementById('endSessionConfirm').addEventListener('click', async () => {
             if (_selectedSat === null) return;
             await closeSession(_selectedSat);
         });
 
-        async function closeSession(satScore, endReason = 'NORMAL') {
-            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : window.location.origin;
+async function closeSession(satScore, endReason = 'NORMAL') {
+            const baseUrl = API_BASE_URL;
             const satNote = (document.getElementById('thankYouOneLine')?.value || '').trim();
             
             try {
+                // 1. 서버에 종료 요청 및 만족도 데이터 전송 (await로 완료 대기)
                 const response = await fetch(`${baseUrl}/sessions/${windowSessId}/close`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -432,23 +725,28 @@
                         sat_note: satNote || null
                     })
                 });
+
                 if (response.ok) {
+                    // 2. 저장이 확인되면 안내 메시지 후 이동
                     alert("상담이 안전하게 종료되었습니다.");
                 }
             } catch (e) {
                 console.error("세션 종료 실패:", e);
+                // 네트워크 오류 등이 발생해도 일단 페이지는 이동시킵니다.
             }
 
+            // 3. 상태 업데이트 및 타이머 정리
             _sessionClosed = true;
             if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
-            if (analysisTimer) { clearInterval(analysisTimer); analysisTimer = null; }
-            if (localVideo.srcObject) localVideo.srcObject.getTracks().forEach(t => t.stop());
-
+            
             document.getElementById('endSessionModal').classList.remove('show');
+
+            // 4. [수정] 이동 경로를 Landing.html로 명확히 지정 (404 방지)
             location.href = 'Landing.html'; 
         }
 
-        // ── Heartbeat ──
+        // ── 창 강제 종료 감지: Heartbeat 방식 ──
+        // 5초마다 서버에 ping → 15초 이상 없으면 서버가 자동 DROPOUT 처리
         let _sessionClosed = false;
         let _heartbeatTimer = null;
 
@@ -459,14 +757,21 @@
                     clearInterval(_heartbeatTimer);
                     return;
                 }
-                const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : window.location.origin;
+                const baseUrl = API_BASE_URL;
                 fetch(`${baseUrl}/sessions/${windowSessId}/heartbeat`, { method: 'POST' }).catch(() => {});
             }, 5000);
         }
 
+        // ── 탭/브라우저 닫기 감지 ──
+        // beforeunload 시 beacon으로 즉시 DROPOUT 전송
+        // - 탭 닫기 / 브라우저 닫기: beacon 전송 → DROPOUT 확정
+        // - 새로고침: beacon 전송 후 → 페이지 로드 시 reactivate로 복구
+        // - 인터넷 끊김: beacon 전송 불가 → 세션 그대로 유지 (heartbeat 자동종료 없음)
         window.addEventListener('beforeunload', () => {
             if (_sessionClosed || !windowSessId) return;
-            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : window.location.origin;
+            sessionStorage.setItem('mw_refreshing', '1');
+            sessionStorage.setItem('mw_sess_id', String(windowSessId));
+            const baseUrl = API_BASE_URL;
             navigator.sendBeacon(
                 `${baseUrl}/sessions/${windowSessId}/close`,
                 new Blob([JSON.stringify({ end_reason: 'DROPOUT', sat: null, sat_note: null })],
@@ -474,13 +779,15 @@
             );
         });
 
+
+
         // ── 고민 유형 선택 모달 로직 ──
-        let _topicList = [];
-        let _selectedTopics = [];
-        let _etcTopicId = null;
+        let _topicList = [];          // DB에서 불러온 전체 topic 목록
+        let _selectedTopics = [];     // 선택된 topic id 배열
+        let _etcTopicId = null;       // '기타' topic의 id (있으면)
 
         async function loadAndShowTopicModal() {
-            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : window.location.origin;
+            const baseUrl = API_BASE_URL;
             try {
                 const res = await fetch(`${baseUrl}/topics`);
                 const data = await res.json();
@@ -512,12 +819,14 @@
             const id = topic.id;
             const isEtc = (topic.code || '').toUpperCase() === 'ETC' || topic.name === '기타';
             if (chip.classList.contains('selected')) {
+                // 선택 해제
                 chip.classList.remove('selected');
                 _selectedTopics = _selectedTopics.filter(t => t !== id);
                 if (isEtc) _etcTopicId = null;
             } else {
-                if (_selectedTopics.length >= 3) return;
+                if (_selectedTopics.length >= 3) return; // 최대 3개
                 if (isEtc) {
+                    // 기타 선택 시 입력 모달 열기
                     _etcTopicId = id;
                     document.getElementById('topicEtcModal').classList.add('show');
                     return;
@@ -532,36 +841,41 @@
             const cnt = _selectedTopics.length;
             document.getElementById('topicSelectedCount').textContent = `${cnt}개 선택됨 (최대 3개)`;
             document.getElementById('topicModalComplete').disabled = cnt === 0;
+            // 최대 3개 도달 시 미선택 chip 비활성
             document.querySelectorAll('.topic-chip:not(.selected)').forEach(c => {
                 c.classList.toggle('disabled', cnt >= 3);
             });
         }
 
+        // 기타 모달 확인
         document.getElementById('topicEtcConfirm').addEventListener('click', () => {
             const val = document.getElementById('topicEtcInput').value.trim();
             if (!val) { alert('내용을 입력해주세요.'); return; }
             if (_etcTopicId && !_selectedTopics.includes(_etcTopicId)) {
                 _selectedTopics.push(_etcTopicId);
+                // grid에서 기타 chip 선택 표시
                 const etcChip = document.querySelector(`.topic-chip[data-id="${_etcTopicId}"]`);
                 if (etcChip) etcChip.classList.add('selected');
             }
             document.getElementById('topicEtcModal').classList.remove('show');
             updateTopicUI();
         });
-
         document.getElementById('topicEtcCancel').addEventListener('click', () => {
             _etcTopicId = null;
             document.getElementById('topicEtcInput').value = '';
             document.getElementById('topicEtcModal').classList.remove('show');
         });
 
+        // 닫기 버튼 (건너뛰기)
         document.getElementById('topicModalClose').addEventListener('click', () => {
             document.getElementById('topicSelectModal').classList.remove('show');
+            showConsentModalOnce();
         });
 
+        // 완료 버튼
         document.getElementById('topicModalComplete').addEventListener('click', async () => {
             if (_selectedTopics.length === 0) return;
-            const baseUrl = (typeof API_BASE_URL !== 'undefined' && API_BASE_URL) ? API_BASE_URL : window.location.origin;
+            const baseUrl = API_BASE_URL;
             try {
                 await fetch(`${baseUrl}/sessions/${windowSessId}/topics`, {
                     method: 'POST',
@@ -572,9 +886,34 @@
                 console.error('topic 저장 실패:', e);
             }
             document.getElementById('topicSelectModal').classList.remove('show');
+            showConsentModalOnce();
         });
 
-        document.addEventListener("DOMContentLoaded", initSession);
+        document.addEventListener("DOMContentLoaded", async () => {
+            const isRefresh   = sessionStorage.getItem('mw_refreshing');
+            const savedSessId = sessionStorage.getItem('mw_sess_id');
+
+            // 플래그 즉시 제거
+            sessionStorage.removeItem('mw_refreshing');
+
+            if (isRefresh && savedSessId) {
+                // ── 새로고침 → reactivate로 DROPOUT 취소 후 세션 복구 ──
+                const baseUrl = API_BASE_URL;
+                try {
+                    await fetch(`${baseUrl}/sessions/${savedSessId}/reactivate`, { method: 'POST' });
+                } catch (e) { console.warn('reactivate 실패:', e); }
+
+                windowSessId = savedSessId;
+                document.getElementById('headerSessionId').innerText = `SESS-${savedSessId} · 상담 진행 중`;
+                setInterval(fetchMessages, 2000);
+                startHeartbeat();
+                // 고민 유형 모달은 이미 선택했으므로 스킵
+            } else {
+                // ── 최초 접속 / 탭 닫고 재접속 → 새 세션 생성 ──
+                sessionStorage.removeItem('mw_sess_id');
+                await initSession();
+            }
+        });
     </script>
 </body>
 </html>

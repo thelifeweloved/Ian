@@ -1,26 +1,32 @@
 import os
 import time as _time
 import json
-from fastapi import Request, FastAPI, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from typing import Optional, List, Dict, Any
-from fastapi.encoders import jsonable_encoder
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
 import uuid
 import hashlib
 import asyncio
+
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+
+from fastapi import (
+    Request, FastAPI, Depends, HTTPException, Query,
+    WebSocket, WebSocketDisconnect, BackgroundTasks
+)
+from fastapi.encoders import jsonable_encoder
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from dotenv import load_dotenv
+from starlette.websockets import WebSocketState
+
 from db import get_db
 from routers.helper import router as helper_router
-from routers.api import api_router
 from routers.deepface import analyze_face_logic
+from routers.api import api_router
 from routers.analysis.runner import run_core_features
 from routers.analysis.clova_client import ClovaXClient
-from fastapi import BackgroundTasks
 
 load_dotenv()
 app = FastAPI(title="Mindway Post-Analysis API", version="1.1.2")
@@ -247,6 +253,7 @@ def get_client_my_appointment(client_id: int, db: Session = Depends(get_db)):
 
 @app.post("/client/start-session")
 def client_start_session(payload: ClientStartSessionRequest, db: Session = Depends(get_db)):
+    # ACTIVE 세션이 이미 있으면 재사용 (내담자가 열어둔 방에 상담사가 합류하는 구조)
     existing = db.execute(text("""
         SELECT id FROM sess
         WHERE client_id = :clid AND counselor_id = :coid
@@ -255,6 +262,7 @@ def client_start_session(payload: ClientStartSessionRequest, db: Session = Depen
     """), {"clid": payload.client_id, "coid": payload.counselor_id}).scalar()
     if existing:
         return {"status": "success", "sess_id": int(existing), "reused": True}
+    # 없으면 새 세션 생성
     new_uuid = str(uuid.uuid4())
     res = db.execute(text("""
         INSERT INTO sess (uuid, counselor_id, client_id, channel, progress)
@@ -393,6 +401,24 @@ def session_emotions(sess_id: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------
 # Dashboard & Stats
 # ---------------------------------------------------------
+
+
+@app.get("/sessions/{sess_id}/faces")
+def session_faces(sess_id: int, db: Session = Depends(get_db)):
+    """DeepFace(face) 로그 조회 - 상담사 폴링 fallback용 (시간 오름차순)"""
+    rows = db.execute(text("""
+        SELECT id, at AS created_at, label, score
+        FROM face
+        WHERE sess_id = :sid
+        ORDER BY at ASC, id ASC
+    """), {"sid": sess_id}).mappings().all()
+    return {"items": jsonable_encoder(list(rows))}
+
+# ---------------------------------------------------------
+# Dashboard & Stats
+# ---------------------------------------------------------
+
+
 @app.get("/sessions/{sess_id}/dashboard")
 def session_dashboard(sess_id: int, db: Session = Depends(get_db)):
     sess = db.execute(text("""
@@ -407,6 +433,18 @@ def session_dashboard(sess_id: int, db: Session = Depends(get_db)):
         FROM sess_analysis sa LEFT JOIN topic t ON sa.topic_id = t.id WHERE sa.sess_id = :sid
     """), {"sid": sess_id}).mappings().all()
 
+    # 내담자가 선택한 고민 주제 (SessionDetail.html client_topics 섹션용)
+    client_id_row = db.execute(text("SELECT client_id FROM sess WHERE id = :sid"), {"sid": sess_id}).scalar()
+    client_topics_rows = []
+    if client_id_row:
+        client_topics_rows = db.execute(text("""
+            SELECT t.id, t.name, t.code, ct.prio
+            FROM client_topic ct
+            JOIN topic t ON ct.topic_id = t.id
+            WHERE ct.client_id = :cid
+            ORDER BY ct.prio ASC
+        """), {"cid": client_id_row}).mappings().all()
+
     total_alerts = int(db.execute(text("SELECT COUNT(*) FROM alert WHERE sess_id = :sid"), {"sid": sess_id}).scalar() or 0)
     alert_types_rows = db.execute(text("""
         SELECT type, COUNT(*) AS cnt
@@ -417,16 +455,21 @@ def session_dashboard(sess_id: int, db: Session = Depends(get_db)):
 
     quality = {"flow": 0.0, "score": 0.0, "churn_prob": risk_score}
     try:
-        quality_row = db.execute(text("SELECT flow, score FROM quality WHERE sess_id = :sid LIMIT 1"), {"sid": sess_id}).mappings().first()
+        quality_row = db.execute(
+            text("SELECT flow, score FROM quality WHERE sess_id = :sid LIMIT 1"),
+            {"sid": sess_id},
+        ).mappings().first()
         if quality_row:
             quality["flow"] = float(quality_row["flow"] or 0)
             quality["score"] = float(quality_row["score"] or 0)
-    except: pass
+    except Exception:
+        pass
 
     return {
         "session": jsonable_encoder(sess),
         "risk_score": risk_score,
         "topic_analysis": jsonable_encoder(topic_analysis),
+        "client_topics": jsonable_encoder(list(client_topics_rows)),
         "risk_label": "HIGH" if risk_score >= 0.7 else "MID" if risk_score >= 0.4 else "LOW",
         "alert_summary": {"total_alerts": total_alerts},
         "alert_types": alert_types,
@@ -508,6 +551,28 @@ def recent_alerts(counselor_id: int = Query(..., ge=1), db: Session = Depends(ge
 # ---------------------------------------------------------
 # Appointments & Counselors
 # ---------------------------------------------------------
+@app.post("/appointments")
+def create_appointment(payload: dict, db: Session = Depends(get_db)):
+    """Login_client.html에서 상담사 선택 후 예약 생성"""
+    try:
+        client_id     = payload.get("client_id")
+        counselor_id  = payload.get("counselor_id")
+        at            = payload.get("at")
+        status        = payload.get("status", "CONFIRMED")
+        if not client_id or not counselor_id:
+            raise HTTPException(status_code=400, detail="client_id, counselor_id 필수")
+        res = db.execute(text("""
+            INSERT INTO appt (client_id, counselor_id, at, status)
+            VALUES (:cid, :couid, :at, :status)
+        """), {"cid": client_id, "couid": counselor_id, "at": at, "status": status})
+        db.commit()
+        return {"status": "success", "appt_id": res.lastrowid}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.get("/appointments")
 def get_appointments(counselor_id: Optional[int] = Query(None), db: Session = Depends(get_db)):
     sql = """
@@ -515,7 +580,7 @@ def get_appointments(counselor_id: Optional[int] = Query(None), db: Session = De
         FROM appt a 
         JOIN client c ON a.client_id = c.id 
         WHERE (:cid IS NULL OR a.counselor_id = :cid) 
-        ORDER BY a.at DESC
+        ORDER BY a.at ASC
     """
     result = db.execute(text(sql), {"cid": counselor_id}).mappings().all()
     return {"items": jsonable_encoder(list(result))}
@@ -526,37 +591,25 @@ def get_counselors(db: Session = Depends(get_db)):
     result = db.execute(text(sql)).mappings().all()
     return {"items": jsonable_encoder(list(result))}
 
+
 @app.post("/appt")
 def create_appt(payload: dict, db: Session = Depends(get_db)):
+    """
+    내담자가 상담사·날짜·시간 선택 후 예약 생성.
+    A안: 접수 없이 바로 CONFIRMED 저장 → 상담사 대시보드에 즉시 확정 상태로 표시.
+    """
     cid  = payload.get("client_id")
     coid = payload.get("counselor_id")
     at   = payload.get("at")
     if not (cid and coid and at):
         raise HTTPException(status_code=400, detail="client_id, counselor_id, at 필수")
 
-    # ── 중복 체크 ──
-    existing = db.execute(text("""
-        SELECT id FROM appt
-        WHERE client_id    = :cid
-          AND counselor_id = :coid
-          AND at           = :at
-          AND status NOT IN ('CANCELLED')
-        LIMIT 1
-    """), {"cid": cid, "coid": coid, "at": at}).scalar()
-
-    if existing:
-        return {"ok": True, "appt_id": existing, "duplicate": True}
-
-    try:
-        res = db.execute(text("""
-            INSERT INTO appt (client_id, counselor_id, at, status)
-            VALUES (:cid, :coid, :at, 'CONFIRMED')
-        """), {"cid": cid, "coid": coid, "at": at})
-        db.commit()
-        return {"ok": True, "appt_id": res.lastrowid}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+    res = db.execute(text("""
+        INSERT INTO appt (client_id, counselor_id, at, status)
+        VALUES (:cid, :coid, :at, 'CONFIRMED')
+    """), {"cid": cid, "coid": coid, "at": at})
+    db.commit()
+    return {"ok": True, "appt_id": res.lastrowid}
 
 @app.patch("/appointments/{appt_id}")
 def update_appointment(appt_id: int, payload: ApptUpdateRequest, db: Session = Depends(get_db)):
@@ -687,7 +740,6 @@ async def close_session(sess_id: int, request: Request, background_tasks: Backgr
             "sat_note":   payload.sat_note
         })
 
-        # 내담자 상태 업데이트 로직 (안정/주의/개선필요)
         client_row = db.execute(text(
             "SELECT client_id FROM sess WHERE id = :sid"
         ), {"sid": sess_id}).mappings().first()
@@ -713,16 +765,33 @@ async def close_session(sess_id: int, request: Request, background_tasks: Backgr
 
             db.execute(text("UPDATE client SET status = :status WHERE id = :cid"), {"status": new_status, "cid": cid})
 
+        # face 로그는 세션 종료 시 일괄 저장
+        try:
+            _flush_face_buffer(db, sess_id)
+        except Exception:
+            pass
+
         db.commit()
 
-        # AI 분석 파이프라인 백그라운드 실행
+        # ✅ 수정된 백그라운드 작업 (들여쓰기 및 저장 로직 통합 완료)
         def run_ai_background(sid: int):
             db_gen = get_db()
             bg_db = next(db_gen)
             try:
-                clova = ClovaXClient(api_key=os.getenv("CLOVA_API_KEY", ""), endpoint_id=os.getenv("CLOVA_ENDPOINT_ID", ""))
+                # 1. 클라이언트 생성 (환경변수 기반)
+                clova = ClovaXClient(
+                    api_key=os.getenv("CLOVA_API_KEY", ""), 
+                    endpoint_id=os.getenv("CLOVA_ENDPOINT_ID", "")
+                )
+                # 2. 핵심 분석 실행 (runner.py 호출)
                 run_core_features(clova, sess_id=sid, db=bg_db)
+                
+                # 3. [치명적 수정] 분석 결과를 실제 DB 디스크에 기록 확정!
+                bg_db.commit()  
+                
             except Exception as e_run:
+                # 4. 에러 발생 시 작업 취소 (데이터 꼬임 방지)
+                bg_db.rollback() 
                 print(f"[runner 백그라운드 실패] {e_run}")
             finally:
                 bg_db.close()
@@ -735,15 +804,125 @@ async def close_session(sess_id: int, request: Request, background_tasks: Backgr
         raise HTTPException(status_code=400, detail=str(e))
 
 # ---------------------------------------------------------
-# WebSocket & Heartbeat
+# WebSocket & Heartbeat (이안님의 고유 기능 유지)
 # ---------------------------------------------------------
 _face_prev_scores: dict = {}
+_face_last_analyze: dict = {}   # session_id → 마지막 분석 시각
 FACE_CHANGE_THRESHOLD = 0.2
+FACE_ANALYZE_INTERVAL = 1.0     # 서버 분석 주기 (초)
+_face_buffer: dict = {}       # sess_db_id(int) -> list[dict] (bulk insert buffer)
+_ok_face_cache: dict = {}     # sess_db_id(int) -> bool (consent cache)
+_viewer_ws: dict = {}  # sess_id → 상담사 WebSocket (영상 중계용)
 _heartbeat_store: dict = {}
+_last_face_saved: dict = {} 
+
+
+def _ok_face_cached(db: Session, sess_db_id: int) -> bool:
+    """ok_face 동의는 세션당 1회만 DB 조회하고 캐시에 저장"""
+    if sess_db_id in _ok_face_cache:
+        return bool(_ok_face_cache[sess_db_id])
+    try:
+        ok = db.execute(text("SELECT ok_face FROM sess WHERE id = :sid"), {"sid": int(sess_db_id)}).scalar()
+        okb = bool(ok)
+    except Exception:
+        okb = False
+    _ok_face_cache[sess_db_id] = okb
+    return okb
+
+def _flush_face_buffer(db: Session, sess_db_id: int) -> int:
+    """_face_buffer에 쌓인 face 로그를 세션 종료 시 일괄 INSERT"""
+    rows = _face_buffer.get(int(sess_db_id)) or []
+    if not rows:
+        return 0
+    # 동의 없으면 저장 스킵 + 버퍼만 비움
+    if not _ok_face_cached(db, int(sess_db_id)):
+        _face_buffer.pop(int(sess_db_id), None)
+        return 0
+
+    sql = text(
+        "INSERT INTO face (sess_id, at, label, score, dist, meta) "
+        "VALUES (:sid, :at, :l, :s, :d, :meta)"
+    )
+    try:
+        db.execute(sql, rows)  # executemany
+        # 커밋은 호출자(close_session)가 수행
+        inserted = len(rows)
+    except Exception:
+        inserted = 0
+        db.rollback()
+    finally:
+        _face_buffer.pop(int(sess_db_id), None)
+    return inserted
+
+def should_store_face(session_id: str, dominant: str, score: float, now: float) -> bool:
+    prev = _last_face_saved.get(session_id)
+    score = float(score or 0.0)
+
+    prev = _last_face_saved.get(session_id)
+
+    if prev is None:
+        _last_face_saved[session_id] = {
+            "dominant": dominant,
+            "score": score,
+            "ts": now,
+        }
+        return True
+
+    # 감정 라벨이 바뀌면 저장
+    if prev["dominant"] != dominant:
+        _last_face_saved[session_id] = {
+            "dominant": dominant,
+            "score": score,
+            "ts": now,
+        }
+        return True
+
+    # 같은 감정이어도 점수 변화가 크면 저장
+    if abs(float(prev["score"]) - float(score)) >= 0.15:
+        _last_face_saved[session_id] = {
+            "dominant": dominant,
+            "score": score,
+            "ts": now,
+        }
+        return True
+
+    # 너무 오래 같은 상태면 10초마다 1회 저장
+    if (now - float(prev["ts"])) >= 10.0:
+        _last_face_saved[session_id] = {
+            "dominant": dominant,
+            "score": score,
+            "ts": now,
+        }
+        return True
+
+    return False
+
+
+@app.post("/sessions/{sess_id}/reactivate")
+def reactivate_session(sess_id: int, db: Session = Depends(get_db)):
+    """새로고침으로 인한 DROPOUT을 취소하고 세션을 ACTIVE로 복구"""
+    row = db.execute(
+        text("SELECT progress, end_reason FROM sess WHERE id = :sid"),
+        {"sid": sess_id}
+    ).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="세션 없음")
+
+    if row["progress"] == "CLOSED" and row["end_reason"] == "DROPOUT":
+        db.execute(text("""
+            UPDATE sess SET progress = 'ACTIVE', end_at = NULL, end_reason = NULL
+            WHERE id = :sid
+        """), {"sid": sess_id})
+        db.commit()
+        _heartbeat_store[sess_id] = _time.time()
+        return {"ok": True, "restored": True}
+
+    _heartbeat_store[sess_id] = _time.time()
+    return {"ok": True, "restored": False}
 
 @app.post("/sessions/{sess_id}/heartbeat")
 def session_heartbeat(sess_id: int, db: Session = Depends(get_db)):
-    # asyncio 루프가 없는 스레드에서도 작동하도록 표준 time.time() 사용
     _heartbeat_store[sess_id] = _time.time()
     return {"ok": True}
 
@@ -752,16 +931,12 @@ def heartbeat_check(sess_id: int, db: Session = Depends(get_db)):
     last = _heartbeat_store.get(sess_id)
     if last is None:
         return {"alive": None}
-    
-    # 현재 시간과의 차이 계산
     elapsed = _time.time() - last
-    
-    if elapsed > 15:
+
+    if elapsed > 300:
         try:
-            # 상태가 ACTIVE인 경우에만 자동 종료 처리
             db.execute(text("""
-                UPDATE sess 
-                SET end_at = NOW(), progress = 'CLOSED', end_reason = 'DROPOUT' 
+                UPDATE sess SET end_at = NOW(), progress = 'CLOSED', end_reason = 'DROPOUT'
                 WHERE id = :sid AND progress = 'ACTIVE'
             """), {"sid": sess_id})
             db.commit()
@@ -769,60 +944,156 @@ def heartbeat_check(sess_id: int, db: Session = Depends(get_db)):
             return {"alive": False, "auto_closed": True, "elapsed": round(elapsed)}
         except Exception as e:
             db.rollback()
-            print(f"Heartbeat 자동 종료 에러: {e}")
-            
+            print(f"Heartbeat 5분 타임아웃 처리 에러: {e}")
+
     return {"alive": elapsed <= 15, "elapsed": round(elapsed)}
             
 
 @app.websocket("/ws/analyze/{session_id}")
+
 async def websocket_analyze(websocket: WebSocket, session_id: str, db: Session = Depends(get_db)):
+    """내담자 프레임(base64)을 받아 DeepFace 분석 → ws/view로 push + _face_buffer에 누적(실시간 DB insert 제거)"""
     await websocket.accept()
     try:
         while True:
-            data_str = await websocket.receive_text()
-            request_data = json.loads(data_str)
-            image_base64 = request_data.get("image_base64")
-            sess_db_id   = request_data.get("sess_db_id")
-            if not image_base64: continue
+            raw = await websocket.receive_text()
+            try:
+                payload = json.loads(raw) if raw else {}
+            except Exception:
+                payload = {}
 
-            result = await asyncio.to_thread(analyze_face_logic, session_id, image_base64)
+            image_b64 = payload.get("image_base64")
+            sess_db_id = payload.get("sess_db_id")  # client가 보내는 DB sess_id
+            if not image_b64 or sess_db_id is None:
+                continue
 
-            if result.get("status") == "success" and sess_db_id:
-                dominant = result["dominant"]
-                score    = result["scores"].get(dominant, 0.0)
-                prev     = _face_prev_scores.get(session_id)
+            # 분석 주기 제한 (서버 부하 제어)
+            now = _time.time()
+            last = _face_last_analyze.get(session_id, 0.0)
+            if (now - last) < float(FACE_ANALYZE_INTERVAL):
+                continue
+            _face_last_analyze[session_id] = now
 
-                if prev is None or abs(score - prev) >= FACE_CHANGE_THRESHOLD:
-                    try:
-                        ok = db.execute(text("SELECT ok_face FROM sess WHERE id = :sid"), {"sid": int(sess_db_id)}).scalar()
-                        if ok:
-                            db.execute(text("""
-                                INSERT INTO face (sess_id, at, label, score, dist, meta)
-                                VALUES (:sess_id, NOW(), :label, :score, :dist, :meta)
-                            """), {
-                                "sess_id": int(sess_db_id), "label": dominant, "score": round(score, 2),
-                                "dist": json.dumps(result["scores"]), "meta": json.dumps({"engine": "deepface", "version": "0.4"})
-                            })
-                            db.commit()
-                    except: db.rollback()
+            # DeepFace 분석 (CPU thread)
+            result = await asyncio.to_thread(analyze_face_logic, session_id, image_b64)
+
+            # ws/view 실시간 push는 유지
+            viewer = _viewer_ws.get(str(session_id)) or _viewer_ws.get(session_id)
+            if viewer and viewer.client_state == WebSocketState.CONNECTED:
+                try:
+                    await viewer.send_text(json.dumps({"type": "emotion", "result": result}))
+                except Exception:
+                    _viewer_ws.pop(str(session_id), None)
+                    _viewer_ws.pop(session_id, None)
+
+            if result.get("status") == "success":
+                try:
+                    sid_int = int(sess_db_id)
+                except Exception:
+                    continue
+
+                dominant = result.get("dominant") or "neutral"
+                scores = (result.get("scores") or {})
+                score = float(scores.get(dominant, 0.0) or 0.0)
+
+                # ok_face는 캐시로 조회 최소화
+                if _ok_face_cached(db, sid_int):
+                    if should_store_face(str(session_id), dominant, score, now):
+                        row = {
+                            "sid": sid_int,
+                            "at": datetime.utcnow(),
+                            "l": dominant,
+                            "s": round(score, 3),
+                            "d": json.dumps(scores),
+                            "meta": json.dumps({"engine": "deepface_ws", "version": "1.1"}),
+                        }
+                        _face_buffer.setdefault(sid_int, []).append(row)
+
+            # prev score는 UI/저장 최적화용으로 유지
+            if result.get("status") == "success":
+                dominant = result.get("dominant") or "neutral"
+                score = float((result.get("scores") or {}).get(dominant, 0.0) or 0.0)
                 _face_prev_scores[session_id] = score
-            await websocket.send_text(json.dumps(result))
-    except: pass
 
-# ---------------------------------------------------------
-# Face/Consent API
-# ---------------------------------------------------------
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        # 세션 캐시 정리(메모리 누수 방지)
+        _face_prev_scores.pop(session_id, None)
+        _face_last_analyze.pop(session_id, None)
+        _last_face_saved.pop(session_id, None)
+
+# ── WebRTC 시그널링 ──────────────────────────────────────────
+_signal_peers: dict = {}  # sess_id → {"client": ws, "counselor": ws}
+
+@app.websocket("/ws/signal/{session_id}/{role}")
+async def websocket_signal(websocket: WebSocket, session_id: str, role: str):
+    """WebRTC 시그널링: offer/answer/ICE 교환 relay"""
+    await websocket.accept()
+    if session_id not in _signal_peers:
+        _signal_peers[session_id] = {}
+    _signal_peers[session_id][role] = websocket
+    peer_role = "counselor" if role == "client" else "client"
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            peer = _signal_peers.get(session_id, {}).get(peer_role)
+            if peer and peer.client_state == WebSocketState.CONNECTED:
+                try:
+                    await peer.send_text(msg)
+                except Exception:
+                    _signal_peers.get(session_id, {}).pop(peer_role, None)
+    except:
+        _signal_peers.get(session_id, {}).pop(role, None)
+
+@app.websocket("/ws/view/{session_id}")
+async def websocket_view(websocket: WebSocket, session_id: str):
+    """상담사가 연결 → 내담자 프레임을 실시간 수신"""
+    await websocket.accept()
+    _viewer_ws[session_id] = websocket
+    try:
+        while True:
+            await websocket.receive_text()  # keep-alive
+    except:
+        _viewer_ws.pop(session_id, None)
+
 @app.post("/face/save")
 def save_face(payload: FaceSaveRequest, db: Session = Depends(get_db)):
     try:
         ok = db.execute(text("SELECT ok_face FROM sess WHERE id = :sid"), {"sid": payload.sess_id}).scalar()
         if not ok: return {"status": "skipped"}
-        db.execute(text("INSERT INTO face (sess_id, at, label, score, dist) VALUES (:sid, NOW(), :l, :s, :d)"),
-                   {"sid": payload.sess_id, "l": payload.label, "s": payload.score, "d": json.dumps(payload.dist)})
+        db.execute(text("INSERT INTO face (sess_id, at, label, score, dist, meta) VALUES (:sid, NOW(), :l, :s, :d, :meta)"),
+                   {"sid": payload.sess_id, "l": payload.label, "s": payload.score, "d": json.dumps(payload.dist), "meta": json.dumps({"engine": "deepface_http", "version": "1.0"})})
         db.commit()
         return {"status": "saved"}
     except Exception as e:
         db.rollback(); raise HTTPException(status_code=400, detail=str(e))
+
+
+class HttpAnalyzeRequest(BaseModel):
+    session_id: str
+    image_base64: str
+    sess_db_id: Optional[int] = None
+
+@app.post("/analyze")
+async def http_analyze(payload: HttpAnalyzeRequest, db: Session = Depends(get_db)):
+    result = await asyncio.to_thread(analyze_face_logic, payload.session_id, payload.image_base64)
+    if result.get("status") == "success" and payload.sess_db_id:
+        dominant = result["dominant"]
+        score    = result["scores"].get(dominant, 0.0)
+        prev     = _face_prev_scores.get(payload.session_id)
+        if prev is None or abs(score - prev) >= FACE_CHANGE_THRESHOLD:
+            try:
+                ok = db.execute(text("SELECT ok_face FROM sess WHERE id = :sid"), {"sid": int(payload.sess_db_id)}).scalar()
+                if ok:
+                    db.execute(text("INSERT INTO face (sess_id, at, label, score, dist, meta) VALUES (:sid, NOW(), :l, :s, :d, :meta)"),
+                               {"sid": int(payload.sess_db_id), "l": dominant, "s": round(score, 2), "d": json.dumps(result["scores"]), "meta": json.dumps({"engine": "deepface", "version": "0.4"})})
+                    db.commit()
+            except: db.rollback()
+        _face_prev_scores[payload.session_id] = score
+    return result
 
 @app.patch("/sessions/{sess_id}/consent")
 def update_consent(sess_id: int, payload: ConsentRequest, db: Session = Depends(get_db)):

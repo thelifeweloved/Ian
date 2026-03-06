@@ -6,7 +6,6 @@
     <title>MindWay - 실시간 상담 (상담사)</title>
 
     <script src="config.js"></script>
-    <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -195,10 +194,10 @@
                 <span class="nav-item-text">상담사 채팅</span>
             </a>
         </nav>
-        <a href="Appt.html" class="settings-btn">
+        <a href="Main.html" class="settings-btn">
             <i class="fa-solid fa-house"></i><span class="btn-text"> 예약리스트로 이동</span>
         </a>
-        <a href="Login.html" class="logout-btn" onclick="localStorage.clear();">
+        <a href="Landing.html" class="logout-btn" onclick="localStorage.clear();">
             <i class="fa-solid fa-arrow-right-from-bracket"></i><span class="btn-text"> Logout Account</span>
         </a>
     </aside>
@@ -211,7 +210,6 @@
                     <div class="title-wrap">
                         <h2 id="headerCounselorName">상담사</h2>
                         <div class="session-id" id="headerSessionId">SESS-WAIT · 상담 대기 중</div>
-                        <div id="headerClientInfo" style="font-size:0.78rem;color:#7389f4;font-weight:600;margin-top:3px;display:none;"></div>
                     </div>
                 </div>
                 <button type="button" class="btn-end-session" title="상담 종료"><i class="fa-solid fa-right-from-bracket"></i></button>
@@ -298,16 +296,14 @@
             </div>
             <div class="panel-section">
                 <div class="panel-title">CLIENT LIVE FEED</div>
-                <div class="video-end-wrap">
-                    <button type="button" class="btn-video-end" id="btnVideoEnd"><i class="fa-solid fa-video-slash"></i> 영상종료</button>
-                </div>
                 <div class="live-feed-wrap" id="liveFeedWrap">
-                    <span class="badge-live"><span class="dot"></span>LIVE</span>
-                    <video id="localVideo" playsinline autoplay muted style="display:none;"></video>
+                    <span class="badge-live" id="liveBadge" style="display:none;"><span class="dot"></span>LIVE</span>
+                    <canvas id="clientFrame" style="display:none;width:100%;height:100%;object-fit:cover;"></canvas>
+                    <video id="clientVideo" autoplay playsinline muted style="display:none;width:100%;height:100%;object-fit:cover;"></video>
                     <span class="placeholder" id="videoPlaceholder">
                         <span class="icon-wrap"><i class="fa-solid fa-video-slash"></i></span>
                         내담자 영상 대기중
-                        <span class="hint">하단 입력창에서 영상 아이콘을 <br>눌러 시연을 시작하세요</span>
+                        <span class="hint">내담자가 영상을 켜면 여기에 표시됩니다</span>
                     </span>
                 </div>
             </div>
@@ -333,17 +329,15 @@
 
     <script>
         // ★ 파일 전용 독립 API 경로 설정 유지
-        const ANALYZE_URL = `http://${window.location.hostname}:8001/analyze`;
+        const ANALYZE_URL = (API_BASE_URL) + '/analyze';
 
-        const urlParams = new URLSearchParams(location.search);
-        const apptId = urlParams.get('appt_id');
-        const counselorId = urlParams.get('counselor_id') || localStorage.getItem('counselor_id') || 1;
+        const _urlParams = new URLSearchParams(window.location.search);
+        const clientId = _urlParams.get('client_id') || localStorage.getItem('client_id') || 1;
+        const counselorId = _urlParams.get('counselor_id') || localStorage.getItem('counselor_id') || 1;
         const counselorName = localStorage.getItem('counselor_name') || '상담사';
 
-        let clientId = null; // initSession에서 appt 조회 후 설정
-
-        document.getElementById('displayCounselorName').innerText = counselorName + ' 상담사님';
-        document.getElementById('headerCounselorName').innerText = counselorName + ' 상담사님';
+        document.getElementById('displayCounselorName').innerText = counselorName;
+        document.getElementById('headerCounselorName').innerText = counselorName;
 
         const counselorEmail = localStorage.getItem('counselor_email') || '이메일 정보 없음';
         const emailEl = document.getElementById('displayCounselorEmail');
@@ -404,8 +398,11 @@
             if (chatPollId) { clearInterval(chatPollId); chatPollId = null; }
             if (statusPollId) { clearInterval(statusPollId); statusPollId = null; }
 
-            // 영상도 켜져있으면 종료
-            try { stopVideo(); } catch(e) {}
+            // 감정 폴링 중단
+            stopEmotionPolling();
+
+            // 영상 수신 중단
+            stopVideoReceiver();
 
             // 입력 잠금
             lockChatUI();
@@ -434,16 +431,7 @@
 
         async function initSession() {
             try {
-                // ── appt_id로 client_id 확인 ──
-                if (apptId) {
-                    const apptRes = await fetch(`${API_BASE_URL}/appointments?counselor_id=${counselorId}`);
-                    const apptData = await apptRes.json();
-                    const appt = (apptData.items || []).find(a => String(a.id) === String(apptId));
-                    if (appt) clientId = appt.client_id;
-                }
-                if (!clientId) clientId = localStorage.getItem('client_id') || 1;
-
-        const res = await fetch(`${API_BASE_URL}/client/start-session`, {
+                const res = await fetch(`${API_BASE_URL}/client/start-session`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ client_id: Number(clientId), counselor_id: Number(counselorId) })
@@ -451,21 +439,13 @@
                 const data = await res.json();
                 if (data && data.sess_id) {
                     window._mwSessId = data.sess_id;
+
+                    // ✅ 항상 채팅창 초기화 (이전 세션 찌꺼기 제거)
+                    const container = document.getElementById('chatMessages');
+                    if (container) container.innerHTML = '';
+
                     document.getElementById('headerSessionId').innerText = `SESS-${data.sess_id} · 실시간 상담 중`;
                     startSessionTimer();
-                    // 내담자 이름·ID 헤더 표시
-                    try {
-                        const dashRes = await fetch(`${API_BASE_URL}/sessions/${data.sess_id}/dashboard`);
-                        const dash = await dashRes.json();
-                        const cName = dash.session?.client_name || '';
-                        const cId   = dash.session?.client_id   || '';
-                        if (cName) {
-                            window._clientName = cName;
-                            const el = document.getElementById('headerClientInfo');
-                            el.innerText = `내담자: ${cName}  (ID: ${cId})`;
-                            el.style.display = 'block';
-                        }
-                    } catch(e) {}
 
                     // ✅ 폴링 시작 (메시지/상태 각각)
                     if (chatPollId) clearInterval(chatPollId);
@@ -473,6 +453,12 @@
 
                     if (statusPollId) clearInterval(statusPollId);
                     statusPollId = setInterval(pollSessionStatus, 1000);
+
+                    // ✅ 내담자 감정 폴링 시작
+                    startEmotionPolling();
+
+                    // ✅ 내담자 영상 수신 시작
+                    startVideoReceiver();
                 }
             } catch (e) { console.error("세션 연결 실패:", e); }
         }
@@ -578,7 +564,7 @@
             container.innerHTML = '';
             msgs.forEach(m => {
                 const isMe = m.speaker === 'COUNSELOR';
-                const who = isMe ? '상담사' : (m.speaker === 'SYSTEM' ? 'SYSTEM' : (window._clientName || '내담자'));
+                const who = isMe ? '상담사' : (m.speaker === 'SYSTEM' ? 'SYSTEM' : '내담자');
                 const cssClass = (m.speaker === 'COUNSELOR') ? 'counselor' : 'client';
                 const timeStr = new Date(m.at).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
 
@@ -768,7 +754,43 @@
             surprise: { ko: '놀람',  icon: 'fa-face-surprise', color: '#10b981' },
         };
 
-        const EMOTION_SCORE_THRESHOLD = 70;
+        const EMOTION_SCORE_THRESHOLD = 65;
+
+        let _lastEmotionUI = {
+            dominant: null,
+            score: 0,
+            updatedAt: 0
+        };
+
+        function shouldUpdateEmotionUI(dominant, scoreFrac) {
+            const now = Date.now();
+            const score = Number(scoreFrac || 0);
+
+            if (!_lastEmotionUI.dominant) {
+                _lastEmotionUI = { dominant, score, updatedAt: now };
+                return true;
+            }
+
+            // 감정 라벨 변경
+            if (_lastEmotionUI.dominant !== dominant) {
+                _lastEmotionUI = { dominant, score, updatedAt: now };
+                return true;
+            }
+
+            // 같은 감정이어도 점수 변화가 크면 갱신
+            if (Math.abs(_lastEmotionUI.score - score) >= 0.08) {
+                _lastEmotionUI = { dominant, score, updatedAt: now };
+                return true;
+            }
+
+            // 너무 오래 같은 상태면 5초마다 1회 갱신
+            if ((now - _lastEmotionUI.updatedAt) >= 5000) {
+                _lastEmotionUI = { dominant, score, updatedAt: now };
+                return true;
+            }
+
+            return false;
+        }
 
         function updateEmotionUI(dominant, scoreFrac) {
             const pct = Math.min(Math.round((scoreFrac || 0) * 100), 100);
@@ -792,132 +814,126 @@
             emojiEl.style.color = info.color;
         }
 
-        let ws = null;
-        let videoFileObjectUrl = null;
+        // ── 내담자 영상 수신 (ws/view) ──────────────────────────
+        let _viewerWs = null;
+        let _lastEmotionWsAt = 0; // ws(view)로 감정 수신 시각(ms)
 
-        async function analyzeFrame() {
-            if (!ws || ws.readyState !== WebSocket.OPEN || localVideo.style.display === 'none') return;
-            if (localVideo.readyState < 2) return;
+        let _rtcPc = null;
 
-            try {
-                ctx.drawImage(localVideo, 0, 0, 320, 240);
-                const b64 = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+        function startVideoReceiver() {
+            if (!window._mwSessId) return;
+            const protocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
+            const wsHost = API_BASE_URL.replace(/^https?:\/\//, '');
 
-                const payload = {
-                    session_id: String(window._mwSessId || 'mindway'),
-                    image_base64: 'data:image/jpeg;base64,' + b64,
-                    sess_db_id: window._mwSessId
-                };
+            // ── WebRTC 수신 (영상) ──
+            _rtcPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            _rtcPc.ontrack = (e) => {
+                const videoEl = document.getElementById('clientVideo');
+                const placeholder = document.getElementById('videoPlaceholder');
+                const badge = document.getElementById('liveBadge');
+                videoEl.srcObject = e.streams[0];
+                videoEl.style.display = 'block';
+                placeholder.style.display = 'none';
+                badge.style.display = 'inline-flex';
+            };
 
-                ws.send(JSON.stringify(payload));
-            } catch (e) {
-                console.error("Frame capture error:", e);
-            }
-        }
-
-        function startVideo() {
-            if (clientEndedShown) return;
-            navigator.mediaDevices.getUserMedia({ video: true, audio: false }).then(stream => {
-                if (videoFileObjectUrl) {
-                    URL.revokeObjectURL(videoFileObjectUrl);
-                    videoFileObjectUrl = null;
+            const signalWs = new WebSocket(`${protocol}://${wsHost}/ws/signal/${window._mwSessId}/counselor`);
+            signalWs.onmessage = async (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'offer') {
+                    await _rtcPc.setRemoteDescription(new RTCSessionDescription(msg));
+                    const answer = await _rtcPc.createAnswer();
+                    await _rtcPc.setLocalDescription(answer);
+                    signalWs.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+                } else if (msg.type === 'candidate' && msg.candidate) {
+                    try { await _rtcPc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(_) {}
                 }
-                localVideo.src = '';
-                localVideo.srcObject = stream;
-                localVideo.style.display = 'block';
-                videoPlaceholder.style.display = 'none';
-                btnVideo.classList.add('on');
+            };
+            _rtcPc.onicecandidate = (e) => {
+                if (e.candidate) signalWs.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+            };
 
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                ws = new WebSocket(`${protocol}//${window.location.hostname}:8001/ws/analyze/${window._mwSessId}`);
-
-                ws.onmessage = (event) => {
+            // ── 감정 분석 결과 수신 (ws/view 유지) ──
+            _viewerWs = new WebSocket(`${protocol}://${wsHost}/ws/view/${window._mwSessId}`);
+            _viewerWs.onmessage = (event) => {
+                try {
                     const data = JSON.parse(event.data);
-                    if (data.status === 'success') {
-                        updateEmotionUI(data.dominant, data.scores[data.dominant] || 0);
-                    }
-                };
+                    if (data.type === 'emotion' && data.result) {
+                        const result = data.result;
+                        if (result.status === 'success' && result.dominant) {
+                            _lastEmotionWsAt = Date.now();
 
-                analysisTimer = setInterval(analyzeFrame, 500);
-            }).catch(() => { alert('카메라 연결 실패'); });
+                            const dominant = result.dominant;
+                            const score = Number(result.scores?.[dominant] || 0);
+
+                            if (shouldUpdateEmotionUI(dominant, score)) {
+                                updateEmotionUI(dominant, score);
+                            }
+                        }
+                    }
+                } catch(e) {}
+            };
+            _viewerWs.onclose = () => { _viewerWs = null; };
+            _viewerWs.onerror = () => { _viewerWs = null; };
         }
 
-        function startVideoFromFile(file) {
-            if (clientEndedShown) return;
-            if (!file || !file.type.startsWith('video/')) {
-                alert('동영상 파일을 선택해주세요.');
-                return;
-            }
-            if (videoFileObjectUrl) {
-                URL.revokeObjectURL(videoFileObjectUrl);
-                videoFileObjectUrl = null;
-            }
-            if (localVideo.srcObject) {
-                localVideo.srcObject.getTracks().forEach(t => t.stop());
-                localVideo.srcObject = null;
-            }
-            videoFileObjectUrl = URL.createObjectURL(file);
-            localVideo.src = videoFileObjectUrl;
-            localVideo.muted = true;
-            localVideo.playsInline = true;
-            localVideo.controls = false;
-            localVideo.style.display = 'block';
-            videoPlaceholder.style.display = 'none';
-            btnVideo.classList.add('on');
-
-            localVideo.onloadeddata = function () {
-                localVideo.play().catch(() => {});
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                ws = new WebSocket(`${protocol}//${window.location.hostname}:8001/ws/analyze/${window._mwSessId}`);
-                ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    if (data.status === 'success') {
-                        updateEmotionUI(data.dominant, data.scores[data.dominant] || 0);
-                    }
-                };
-                analysisTimer = setInterval(analyzeFrame, 500);
-            };
-            localVideo.onerror = function () {
-                alert('동영상 재생에 실패했습니다. 형식을 확인해주세요.');
-                if (videoFileObjectUrl) URL.revokeObjectURL(videoFileObjectUrl);
-                videoFileObjectUrl = null;
-            };
+        function stopVideoReceiver() {
+            if (_rtcPc) { _rtcPc.close(); _rtcPc = null; }
+            if (_viewerWs) { try { _viewerWs.close(); } catch(e) {} _viewerWs = null; }
+            const videoEl = document.getElementById('clientVideo');
+            if (videoEl) { videoEl.srcObject = null; videoEl.style.display = 'none'; }
+            const frameEl = document.getElementById('clientFrame');
+            if (frameEl) { frameEl.style.display = 'none'; }
+            const placeholder = document.getElementById('videoPlaceholder');
+            if (placeholder) placeholder.style.display = 'flex';
+            const badge = document.getElementById('liveBadge');
+            if (badge) badge.style.display = 'none';
         }
 
-        function stopVideo() {
-            if (videoFileObjectUrl) {
-                URL.revokeObjectURL(videoFileObjectUrl);
-                videoFileObjectUrl = null;
-            }
-            localVideo.src = '';
-            if (localVideo.srcObject) {
-                localVideo.srcObject.getTracks().forEach(t => t.stop());
-                localVideo.srcObject = null;
-            }
-            localVideo.style.display = 'none';
-            videoPlaceholder.style.display = 'block';
-            btnVideo.classList.remove('on');
-            if (ws) {
-                ws.close();
-                ws = null;
-            }
-            if (analysisTimer) clearInterval(analysisTimer);
+        // ── 감정 폴링 (내담자가 전송한 감정 결과를 3초마다 조회) ──
+        let _emotionPollTimer = null;
+
+        function startEmotionPolling() {
+            if (_emotionPollTimer) return;
+            _emotionPollTimer = setInterval(async () => {
+                if (!window._mwSessId) return;
+                // 최근 5초 내 ws(view) 감정 수신이 있으면 폴링 스킵
+                if (_lastEmotionWsAt && (Date.now() - _lastEmotionWsAt) < 5000) return;
+                try {
+                    const baseUrl = API_BASE_URL;
+                    const res = await fetch(`${baseUrl}/sessions/${window._mwSessId}/emotions`);
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    const items = (data.items || []);
+                    const latest = items.length ? items[items.length - 1] : null;
+                    if (latest && latest.label && latest.score != null) {
+                        const dominant = latest.label;
+                        const score = Number(latest.score || 0);
+
+                        if (shouldUpdateEmotionUI(dominant, score)) {
+                            updateEmotionUI(dominant, score);
+                        }
+                    }
+                } catch(e) {}
+            }, 3000);
+        }
+
+        function stopEmotionPolling() {
+            if (_emotionPollTimer) { clearInterval(_emotionPollTimer); _emotionPollTimer = null; }
+
+            _lastEmotionWsAt = 0;
+            _lastEmotionUI = {
+                dominant: null,
+                score: 0,
+                updatedAt: 0
+            };
+
             updateEmotionUI('neutral', 0);
         }
 
-        const videoSourceModal = document.getElementById('videoSourceModal');
+        // 영상 버튼 숨김 (상담사는 영상 직접 분석 안 함)
         const btnVideo = document.getElementById('btnVideo');
-
-        btnVideo.addEventListener('click', function () {
-            if (this.classList.contains('on')) stopVideo();
-            else if (!clientEndedShown) videoSourceModal.classList.add('show');
-        });
-
-        document.getElementById('btnSelectWebcam').addEventListener('click', () => { videoSourceModal.classList.remove('show'); startVideo(); });
-        document.getElementById('btnSelectFile').addEventListener('click', () => { videoSourceModal.classList.remove('show'); document.getElementById('videoFileInput').click(); });
-        document.getElementById('videoFileInput').addEventListener('change', function () { if (this.files[0]) startVideoFromFile(this.files[0]); this.value = ''; });
-        document.getElementById('btnSourceCancel').addEventListener('click', () => videoSourceModal.classList.remove('show'));
-        document.getElementById('btnVideoEnd').addEventListener('click', () => stopVideo());
+        if (btnVideo) btnVideo.style.display = 'none';
 
         // ==========================================
         // 5. 메모 및 종료 기능
@@ -971,6 +987,6 @@
         });
 
         document.addEventListener("DOMContentLoaded", initSession);
-    </script>
+</script>
 </body>
 </html>
