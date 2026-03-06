@@ -1611,21 +1611,30 @@
                 </div>
                 <div class="report-col-block">
                     <h3 class="section-title" style="margin-bottom:10px;">내담자 등급 분포</h3>
-                    <div class="card report-card" style="display:flex; align-items:center; justify-content:center;">
-                        <div style="width:200px; height:200px;">
+                    <div class="card report-card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+                        <div style="width:180px;height:180px;">
                             <canvas id="chart-client-grade"></canvas>
+                        </div>
+                        <div style="display:flex;justify-content:center;gap:10px;margin-top:14px;">
+                            <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;background:#e8f5e9;font-size:0.75rem;font-weight:600;color:#2e7d32;">
+                                <span style="width:8px;height:8px;border-radius:50%;background:#3fb950;display:inline-block;"></span>안정
+                            </span>
+                            <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;background:#fff8e1;font-size:0.75rem;font-weight:600;color:#f0a500;">
+                                <span style="width:8px;height:8px;border-radius:50%;background:#f0a500;display:inline-block;"></span>주의
+                            </span>
+                            <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;background:#ffebee;font-size:0.75rem;font-weight:600;color:#e05252;">
+                                <span style="width:8px;height:8px;border-radius:50%;background:#e05252;display:inline-block;"></span>집중 관리
+                            </span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 차트 행 2: 토픽별 세션 분포 (전체 너비) -->
+            <!-- 차트 행 2: 고민 유형 현황 (전체 너비) -->
             <div style="margin-bottom:20px;">
                 <h3 class="section-title" style="margin-bottom:10px;">고민 유형 현황 <span style="font-size:0.75rem;font-weight:400;color:#aab0be;margin-left:6px;">내담자가 직접 선택한 고민 주제</span></h3>
                 <div class="card report-card">
-                    <div style="height:180px;">
-                        <canvas id="chart-topic-dist"></canvas>
-                    </div>
+                    <div id="chart-topic-dist"></div>
                 </div>
             </div>
 
@@ -2254,24 +2263,41 @@
                 if (c1) { if (window._chartQ) window._chartQ.destroy(); window._chartQ = new Chart(c1.getContext('2d'), qualityChartCfg); }
             }
 
-            // ③ 차트 2: 내담자 등급 분포 (도넛)
-            const gradeData = [
-                STATE.clientGrade.find(g => g.client_grade === '안정')?.total || 0,
-                STATE.clientGrade.find(g => g.client_grade === '주의')?.total || 0,
-                STATE.clientGrade.find(g => g.client_grade === '집중 관리')?.total || 0
-            ];
-            const donutCfg = {
-                type: 'doughnut',
-                data: {
-                    labels: ['안정', '주의', '집중 관리'],
-                    datasets: [{ data: gradeData, backgroundColor: ['#3fb950','#f0a500','#e05252'], borderWidth: 2 }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
-            };
-            if (typeof Chart !== 'undefined') {
-                const c2 = document.getElementById('chart-client-grade');
-                if (c2) { if (window._chartGrade) window._chartGrade.destroy(); window._chartGrade = new Chart(c2.getContext('2d'), donutCfg); }
+        // ③ 차트 2: 내담자 등급 분포 (도넛)
+        const gradeData = [
+            STATE.clientGrade.find(g => g.client_grade === '안정')?.total || 0,
+            STATE.clientGrade.find(g => g.client_grade === '주의')?.total || 0,
+            STATE.clientGrade.find(g => g.client_grade === '집중 관리')?.total || 0
+        ];
+        const donutCfg = {
+            type: 'doughnut',
+            data: {
+                labels: ['안정', '주의', '집중 관리'],
+                datasets: [{
+                    data: gradeData,
+                    backgroundColor: ['#3fb950', '#f0a500', '#e05252'],
+                    borderWidth: 2,
+                    hoverOffset: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '65%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${ctx.label}: ${ctx.raw}명`
+                        }
+                    }
+                }
             }
+        };
+        if (typeof Chart !== 'undefined') {
+            const c2 = document.getElementById('chart-client-grade');
+            if (c2) { if (window._chartGrade) window._chartGrade.destroy(); window._chartGrade = new Chart(c2.getContext('2d'), donutCfg); }
+        }
 
             // ③ 차트 3: 토픽별 세션 분포 (막대) — 탭에 따라 데이터 전환
             renderTopicChart("client");
