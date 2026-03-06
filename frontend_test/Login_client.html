@@ -169,131 +169,129 @@
         </div>
     </div>
 
-    <script>
+<script>
+    function togglePassword(inputId, icon) {
+        const input = inputId ? document.getElementById(inputId) : icon.parentElement.querySelector('input');
+        const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+        input.setAttribute('type', type);
+        icon.classList.toggle('fa-eye');
+        icon.classList.toggle('fa-eye-slash');
+    }
 
-        function togglePassword(inputId, icon) {
-            const input = inputId ? document.getElementById(inputId) : icon.parentElement.querySelector('input');
-            const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
-            input.setAttribute('type', type);
-            icon.classList.toggle('fa-eye');
-            icon.classList.toggle('fa-eye-slash');
-        }
+    function toggleView(view) {
+        document.getElementById('login-view').classList.toggle('active', view === 'login');
+        document.getElementById('signup-view').classList.toggle('active', view === 'signup');
+        document.getElementById('counselor-view').classList.toggle('active', view === 'counselor');
+    }
 
-        function toggleView(view) {
-            document.getElementById('login-view').classList.toggle('active', view === 'login');
-            document.getElementById('signup-view').classList.toggle('active', view === 'signup');
-            document.getElementById('counselor-view').classList.toggle('active', view === 'counselor');
-        }
+    let _selectedCounselorId = null;
+    const AVATAR_COLORS = ['#7389f4','#f4a473','#73c9f4','#a473f4','#f473b8','#73f4a4'];
+    let _selectedCounselorName = '';
+    let _selectedDate = '';
+    let _selectedTime = '';
 
-        let _selectedCounselorId = null;
-
-        const AVATAR_COLORS = ['#7389f4','#f4a473','#73c9f4','#a473f4','#f473b8','#73f4a4'];
-        let _selectedCounselorName = '';
-        let _selectedDate = '';
-        let _selectedTime = '';
-
-        async function loadCounselorList() {
-            try {
-                const res  = await fetch(`${API_BASE_URL}/counselors`);
-                const data = await res.json();
-                const list = data.items || [];
-                const container = document.getElementById('counselorList');
-                if (list.length === 0) {
-                    container.innerHTML = '<p style="color:#aab;font-size:0.9rem;">등록된 상담사가 없습니다.</p>';
-                    return;
-                }
-                container.innerHTML = '<div class="counselor-grid">' + list.map((c, i) => {
-                    const initial = c.name.charAt(0);
-                    const color   = AVATAR_COLORS[i % AVATAR_COLORS.length];
-                    return `
-                    <div class="counselor-card" id="card-${c.id}" onclick="selectCounselor(${c.id}, '${c.name}', this)">
-                        <div class="counselor-avatar" style="background:${color}20;color:${color};font-size:1.1rem;font-weight:700;">${initial}</div>
-                        <div class="counselor-name">${c.name}</div>
-                        <div class="counselor-sub">심리상담사</div>
-                        <div class="counselor-check">✓</div>
-                    </div>`;
-                }).join('') + '</div>';
-
-                // 날짜 최솟값 오늘로 설정
-                // UTC 기준 toISOString()은 KST(+9)에서 어제 날짜가 나올 수 있어 로컬 기준으로 처리
-                const now = new Date();
-                const today = now.getFullYear() + '-' +
-                    String(now.getMonth()+1).padStart(2,'0') + '-' +
-                    String(now.getDate()).padStart(2,'0');
-                document.getElementById('apptDate').min = today;
-                document.getElementById('apptDate').value = today;
-                updateTimeSlots();
-            } catch(e) {
-                console.error('상담사 목록 로드 실패:', e);
-            }
-        }
-
-        function selectCounselor(id, name, el) {
-            _selectedCounselorId = id;
-            _selectedCounselorName = name;
-            document.querySelectorAll('.counselor-card').forEach(c => c.classList.remove('selected'));
-            el.classList.add('selected');
-            document.getElementById('stepDatetime').style.display = 'block';
-            updateSummary();
-        }
-
-        function updateTimeSlots() {
-            const timeSelect = document.getElementById('apptTime');
-            const allSlots = ['09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
-
-            // 오늘 날짜이면 현재 시각 이후 슬롯만 표시
-            const selectedDate = document.getElementById('apptDate').value;
-            const now = new Date();
-            const todayStr = now.getFullYear() + '-' +
-                String(now.getMonth()+1).padStart(2,'0') + '-' +
-                String(now.getDate()).padStart(2,'0');
-            const isToday = (selectedDate === todayStr);
-            const nowMinutes = now.getHours() * 60 + now.getMinutes();
-
-            const slots = allSlots.filter(t => {
-                if (!isToday) return true;
-                const [h, m] = t.split(':').map(Number);
-                return (h * 60 + m) > nowMinutes;
-            });
-
-            if (slots.length === 0) {
-                timeSelect.innerHTML = '<option value="">오늘은 예약 가능한 시간이 없습니다</option>';
-            } else {
-                timeSelect.innerHTML = '<option value="">시간 선택</option>' +
-                    slots.map(t => `<option value="${t}">${t}</option>`).join('');
-            }
-
-            timeSelect.onchange = () => {
-                _selectedTime = timeSelect.value;
-                _selectedDate = document.getElementById('apptDate').value;
-                updateSummary();
-            };
-        }
-
-        function updateSummary() {
-            if (!_selectedCounselorId || !_selectedDate || !_selectedTime) {
-                document.getElementById('apptSummary').style.display = 'none';
-                document.getElementById('btnStartCounseling').disabled = true;
+    async function loadCounselorList() {
+        try {
+            const res  = await fetch(`${API_BASE_URL}/counselors`);
+            const data = await res.json();
+            const list = data.items || [];
+            const container = document.getElementById('counselorList');
+            if (!container) return;
+            if (list.length === 0) {
+                container.innerHTML = '<p style="color:#aab;font-size:0.9rem;">등록된 상담사가 없습니다.</p>';
                 return;
             }
-            const [_y,_m,_d] = _selectedDate.split('-');
-            const dateObj = new Date(+_y, +_m-1, +_d); // UTC 파싱 방지 (로컬 기준)
-            const dateStr = dateObj.toLocaleDateString('ko-KR', {month:'long', day:'numeric', weekday:'short'});
-            document.getElementById('summaryText').innerHTML =
-                `👨‍⚕️ <b>${_selectedCounselorName}</b> 상담사<br>📅 ${dateStr} ${_selectedTime}`;
-            document.getElementById('apptSummary').style.display = 'block';
-            document.getElementById('btnStartCounseling').disabled = false;
-        }
+            container.innerHTML = '<div class="counselor-grid">' + list.map((c, i) => {
+                const initial = c.name.charAt(0);
+                const color   = AVATAR_COLORS[i % AVATAR_COLORS.length];
+                return `
+                <div class="counselor-card" id="card-${c.id}" onclick="selectCounselor(${c.id}, '${c.name}', this)">
+                    <div class="counselor-avatar" style="background:${color}20;color:${color};font-size:1.1rem;font-weight:700;">${initial}</div>
+                    <div class="counselor-name">${c.name}</div>
+                    <div class="counselor-sub">심리상담사</div>
+                    <div class="counselor-check">✓</div>
+                </div>`;
+            }).join('') + '</div>';
 
-        function startCounseling() {
-            if (!_selectedCounselorId) return;
-            localStorage.setItem('counselor_id', _selectedCounselorId);
-            // appt 테이블에 예약 저장 후 이동
-            const apptDatetime = _selectedDate && _selectedTime
-                ? `${_selectedDate}T${_selectedTime}:00` : null;
-            if (apptDatetime) {
-                const clientId = localStorage.getItem('client_id');
-                fetch(`${API_BASE_URL}/appt`, {
+            const now = new Date();
+            const today = now.getFullYear() + '-' +
+                String(now.getMonth()+1).padStart(2,'0') + '-' +
+                String(now.getDate()).padStart(2,'0');
+            const apptDateEl = document.getElementById('apptDate');
+            if (apptDateEl) { apptDateEl.min = today; apptDateEl.value = today; }
+            updateTimeSlots();
+        } catch(e) {
+            console.error('상담사 목록 로드 실패:', e);
+        }
+    }
+
+    function selectCounselor(id, name, el) {
+        _selectedCounselorId = id;
+        _selectedCounselorName = name;
+        document.querySelectorAll('.counselor-card').forEach(c => c.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('stepDatetime').style.display = 'block';
+        updateSummary();
+    }
+
+    function updateTimeSlots() {
+        const timeSelect = document.getElementById('apptTime');
+        if (!timeSelect) return;
+        const allSlots = ['09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
+        const selectedDate = document.getElementById('apptDate').value;
+        const now = new Date();
+        const todayStr = now.getFullYear() + '-' +
+            String(now.getMonth()+1).padStart(2,'0') + '-' +
+            String(now.getDate()).padStart(2,'0');
+        const isToday = (selectedDate === todayStr);
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        const slots = allSlots.filter(t => {
+            if (!isToday) return true;
+            const [h, m] = t.split(':').map(Number);
+            return (h * 60 + m) > nowMinutes;
+        });
+        if (slots.length === 0) {
+            timeSelect.innerHTML = '<option value="">오늘은 예약 가능한 시간이 없습니다</option>';
+        } else {
+            timeSelect.innerHTML = '<option value="">시간 선택</option>' +
+                slots.map(t => `<option value="${t}">${t}</option>`).join('');
+        }
+        timeSelect.onchange = () => {
+            _selectedTime = timeSelect.value;
+            _selectedDate = document.getElementById('apptDate').value;
+            updateSummary();
+        };
+    }
+
+    function updateSummary() {
+        const summaryEl = document.getElementById('apptSummary');
+        const btnEl     = document.getElementById('btnStartCounseling');
+        if (!summaryEl || !btnEl) return;
+        if (!_selectedCounselorId || !_selectedDate || !_selectedTime) {
+            summaryEl.style.display = 'none';
+            btnEl.disabled = true;
+            return;
+        }
+        const [_y,_m,_d] = _selectedDate.split('-');
+        const dateObj = new Date(+_y, +_m-1, +_d);
+        const dateStr = dateObj.toLocaleDateString('ko-KR', {month:'long', day:'numeric', weekday:'short'});
+        document.getElementById('summaryText').innerHTML =
+            `👨‍⚕️ <b>${_selectedCounselorName}</b> 상담사<br>📅 ${dateStr} ${_selectedTime}`;
+        summaryEl.style.display = 'block';
+        btnEl.disabled = false;
+    }
+
+    async function startCounseling() {
+        if (!_selectedCounselorId) return;
+        const clientId = localStorage.getItem('client_id');
+        localStorage.setItem('counselor_id', _selectedCounselorId);
+        const apptDatetime = _selectedDate && _selectedTime
+            ? `${_selectedDate}T${_selectedTime}:00` : null;
+
+        let apptId = null;
+        if (apptDatetime) {
+            try {
+                const res = await fetch(`${API_BASE_URL}/appt`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -302,41 +300,147 @@
                         at: apptDatetime,
                         status: 'CONFIRMED'
                     })
-                }).catch(() => {});
-            }
-            location.href = 'Chat_client.html';
-        }
-
-        async function handleClientLogin(event) {
-            event.preventDefault();
-            const email = document.getElementById('clientEmail').value;
-            const pwd = document.getElementById('clientPwd').value;
-
-            try {
-                const response = await fetch(`${API_BASE_URL}/client/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: email, pwd: pwd })
                 });
-
-                const result = await response.json();
-                if (response.ok) {
-                    const cid = result.client_id;
-                    const name = result.client_name || '내담자';
-                    localStorage.setItem('client_id', cid);
-                    localStorage.setItem('client_name', name);
-                    // 상담사 선택 화면으로 전환
-                    await loadCounselorList();
-                    toggleView('counselor');
-                } else {
-                    alert('로그인 실패: ' + (result.detail || '오류 발생'));
-                }
-            } catch (error) {
-                alert('서버 연결 오류');
-            }
+                const data = await res.json();
+                apptId = data.id || data.appt_id || null;
+            } catch(e) {}
         }
+        location.href = `Chat_client.html?counselor_id=${_selectedCounselorId}&client_id=${clientId}${apptId ? '&appt_id=' + apptId : ''}`;
+    }
 
+    function showApptReady(appt) {
+        const at = new Date(appt.at);
+        const dateStr = at.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+        const timeStr = at.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+        document.getElementById('counselor-view').innerHTML = `
+            <div style="text-align:center;">
+                <div style="font-size:2.5rem;margin-bottom:16px;">👋</div>
+                <h2 style="font-size:1.6rem;color:#373f50;font-weight:700;margin-bottom:8px;">
+                    ${localStorage.getItem('client_name')}님, 안녕하세요
+                </h2>
+                <p style="color:#aab0be;font-size:0.92rem;margin-bottom:28px;">예약된 상담이 있습니다</p>
+                <div style="background:#f0f2ff;border:1.5px solid #c7cff8;border-radius:14px;padding:20px 24px;text-align:left;margin-bottom:24px;">
+                    <div style="font-size:0.75rem;font-weight:700;color:#7389f4;letter-spacing:0.06em;margin-bottom:10px;">예약 정보</div>
+                    <div style="font-size:0.95rem;color:#373f50;font-weight:600;line-height:1.8;">
+                        👨‍⚕️ ${appt.counselor_name || '상담사'}<br>
+                        📅 ${dateStr} ${timeStr}
+                    </div>
+                </div>
+                <button class="main-btn" onclick="goToChat(${appt.counselor_id}, ${appt.id})">
+                    상담 시작하기
+                </button>
+                <div style="margin-top:14px;">
+                    <a onclick="newAppt()" style="font-size:0.85rem;color:#aab0be;cursor:pointer;text-decoration:underline;">
+                        다른 상담사로 새 예약하기
+                    </a>
+                </div>
+            </div>
+        `;
+        toggleView('counselor');
+    }
 
-    </script>
+    function goToChat(counselorId, apptId) {
+        const clientId = localStorage.getItem('client_id');
+        localStorage.setItem('counselor_id', counselorId);
+        location.href = `Chat_client.html?appt_id=${apptId}&counselor_id=${counselorId}&client_id=${clientId}`;
+    }
+
+    async function newAppt() {
+        document.getElementById('counselor-view').innerHTML = `
+            <div class="welcome-text">
+                <h2>상담 예약</h2>
+                <p>상담사와 일정을 선택해주세요</p>
+            </div>
+            <div id="stepCounselor">
+                <p style="font-size:0.82rem;font-weight:700;color:#aab0be;letter-spacing:0.06em;text-align:left;margin-bottom:10px;">STEP 1 · 상담사 선택</p>
+                <div id="counselorList"></div>
+            </div>
+            <div id="stepDatetime" style="display:none;margin-top:18px;">
+                <p style="font-size:0.82rem;font-weight:700;color:#aab0be;letter-spacing:0.06em;text-align:left;margin-bottom:10px;">STEP 2 · 날짜 및 시간 선택</p>
+                <div style="display:flex;gap:10px;">
+                    <div style="flex:1;position:relative;">
+                        <i class="fa-regular fa-calendar" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#aab0be;font-size:0.95rem;pointer-events:none;"></i>
+                        <input type="date" id="apptDate" class="input-control" style="padding-left:40px;cursor:pointer;" onchange="updateTimeSlots()">
+                    </div>
+                    <div style="flex:1;position:relative;">
+                        <i class="fa-regular fa-clock" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#aab0be;font-size:0.95rem;pointer-events:none;"></i>
+                        <select id="apptTime" class="input-control" style="padding-left:40px;cursor:pointer;appearance:none;">
+                            <option value="">시간 선택</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="apptSummary" style="display:none;margin-top:14px;padding:14px 16px;background:#f0f2ff;border-radius:10px;border:1.5px solid #c7cff8;text-align:left;">
+                    <div style="font-size:0.82rem;color:#7389f4;font-weight:700;margin-bottom:4px;">예약 요약</div>
+                    <div id="summaryText" style="font-size:0.92rem;color:#373f50;font-weight:500;line-height:1.6;"></div>
+                </div>
+            </div>
+            <button type="button" class="main-btn" id="btnStartCounseling" disabled onclick="startCounseling()" style="margin-top:20px;">상담 시작하기</button>
+        `;
+        await loadCounselorList();
+    }
+
+    async function handleClientLogin(event) {
+        event.preventDefault();
+        const email = document.getElementById('clientEmail').value;
+        const pwd   = document.getElementById('clientPwd').value;
+        try {
+            const response = await fetch(`${API_BASE_URL}/client/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, pwd })
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                alert('로그인 실패: ' + (result.detail || '오류 발생'));
+                return;
+            }
+            const cid  = result.client_id;
+            const name = result.client_name || '내담자';
+            localStorage.setItem('client_id', cid);
+            localStorage.setItem('client_name', name);
+
+            const apptRes  = await fetch(`${API_BASE_URL}/appointments?client_id=${cid}`);
+            const apptData = await apptRes.json();
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const upcoming = (apptData.items || []).find(a =>
+                a.status === 'CONFIRMED' && new Date(a.at) >= today
+            );
+            if (upcoming) {
+                showApptReady(upcoming);
+            } else {
+                await loadCounselorList();
+                toggleView('counselor');
+            }
+        } catch (error) {
+            alert('서버 연결 오류');
+        }
+    }
+
+    async function handleSignup(event) {
+        event.preventDefault();
+        const form  = document.getElementById('client-form');
+        const email = form.querySelector('.email-input').value;
+        const pwd   = form.querySelector('.pwd-input').value;
+        const phone = form.querySelector('.phone-input').value;
+        const name  = form.querySelector('.name-input').value;
+        try {
+            const res = await fetch(`${API_BASE_URL}/client/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, pwd, phone, name })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('회원가입이 완료되었습니다. 로그인해주세요.');
+                toggleView('login');
+            } else {
+                alert('회원가입 실패: ' + (data.detail || '오류 발생'));
+            }
+        } catch(e) {
+            alert('서버 연결 오류');
+        }
+    }
+</script>
 </body>
 </html>

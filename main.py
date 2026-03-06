@@ -467,16 +467,13 @@ def session_dashboard(sess_id: int, db: Session = Depends(get_db)):
     """), {"sid": sess_id}).mappings().all()
 
     # 내담자가 선택한 고민 주제 (SessionDetail.html client_topics 섹션용)
-    client_id_row = db.execute(text("SELECT client_id FROM sess WHERE id = :sid"), {"sid": sess_id}).scalar()
-    client_topics_rows = []
-    if client_id_row:
-        client_topics_rows = db.execute(text("""
-            SELECT t.id, t.name, t.code, ct.prio
-            FROM client_topic ct
-            JOIN topic t ON ct.topic_id = t.id
-            WHERE ct.client_id = :cid
-            ORDER BY ct.prio ASC
-        """), {"cid": client_id_row}).mappings().all()
+    client_topics_rows = db.execute(text("""
+        SELECT t.id, t.name, t.code, st.prio
+        FROM sess_topic st
+        JOIN topic t ON st.topic_id = t.id
+        WHERE st.sess_id = :sid
+        ORDER BY st.prio ASC
+    """), {"sid": sess_id}).mappings().all()
 
     total_alerts = int(db.execute(text("SELECT COUNT(*) FROM alert WHERE sess_id = :sid"), {"sid": sess_id}).scalar() or 0)
     alert_types_rows = db.execute(text("""
@@ -683,27 +680,21 @@ def get_topics(db: Session = Depends(get_db)):
 
 @app.post("/sessions/{sess_id}/topics")
 def save_session_topics(sess_id: int, payload: dict, db: Session = Depends(get_db)):
-    """
-    내담자가 선택한 고민 유형을 client_topic(정보 이력용)에만 저장.
-    sess_analysis 분류는 세션 종료 후 HCX가 전체 대화를 분석하여 직접 기록함.
-    """
+
     topic_ids: List[int] = payload.get("topic_ids", [])
-    client_id = payload.get("client_id")
 
     if not topic_ids:
         raise HTTPException(status_code=400, detail="topic_ids가 비어있습니다.")
 
-    # client_topic에만 저장 (내담자 신청 주제 이력 — 정보 차원)
-    if client_id:
-        for idx, tid in enumerate(topic_ids):
-            db.execute(text("""
-                INSERT INTO client_topic (client_id, topic_id, prio)
-                VALUES (:cid, :tid, :prio)
-                ON DUPLICATE KEY UPDATE prio = :prio
-            """), {"cid": client_id, "tid": tid, "prio": idx + 1})
+    for idx, tid in enumerate(topic_ids):
+        db.execute(text("""
+            INSERT INTO sess_topic (sess_id, topic_id, prio)
+            VALUES (:sid, :tid, :prio)
+            ON DUPLICATE KEY UPDATE prio = :prio
+        """), {"sid": sess_id, "tid": tid, "prio": idx + 1})
 
     db.commit()
-    return {"ok": True, "saved_topic_ids": topic_ids}
+    return {"ok": True}
 
 # ---------------------------------------------------------
 # Analysis & Core Functions
