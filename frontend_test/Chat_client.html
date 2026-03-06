@@ -170,7 +170,6 @@
             </a>
         </nav>
         <a href="#" class="settings-btn"><i class="fa-solid fa-gear"></i><span class="btn-text"> Settings</span></a>
-        <a href="Landing.html" class="logout-btn" onclick="localStorage.clear();"><i class="fa-solid fa-arrow-right-from-bracket"></i><span class="btn-text"> Logout Account</span></a>
     </aside>
 
     <div class="chat-layout">
@@ -321,9 +320,14 @@
            만약 ReferenceError가 발생한다면 config.js 로드 여부를 확인하세요. */
         
         const _cparam = new URLSearchParams(window.location.search);
-        const clientId = _cparam.get('client_id') || localStorage.getItem('client_id') || 1; 
-        const counselorId = _cparam.get('counselor_id') || localStorage.getItem('counselor_id') || 1; 
+        const clientId = _cparam.get('client_id') || localStorage.getItem('client_id') || 1;
+        const counselorId = _cparam.get('counselor_id') || localStorage.getItem('counselor_id') || 1;
+        const apptId = _cparam.get('appt_id') || null;
         const clientName = localStorage.getItem('client_name') || '내담자';
+
+        // localStorage 동기화
+        if (_cparam.get('client_id')) localStorage.setItem('client_id', _cparam.get('client_id'));
+        if (_cparam.get('counselor_id')) localStorage.setItem('counselor_id', _cparam.get('counselor_id'));
 
         let windowSessId = null;
         let lastMsgCount = 0;
@@ -356,29 +360,32 @@
                 if (userEmailEl) userEmailEl.textContent = `ID: ${storedId}`;
             }
 
-            // --- 아래는 기존 로직 그대로 유지 ---
-            // [체크] API_BASE_URL이 존재하지 않을 경우를 대비한 안전장치
-            const baseUrl = API_BASE_URL;
-            
-            try {
-                const res = await fetch(`${baseUrl}/client/start-session`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ client_id: Number(clientId), counselor_id: Number(counselorId) })
-                });
-                const data = await res.json();
-                if (data.sess_id) {
-                    windowSessId = data.sess_id;
-                    sessionStorage.setItem('mw_sess_id', String(data.sess_id)); // 새로고침 대비 저장
-                    document.getElementById('headerSessionId').innerText = `SESS-${data.sess_id} · 상담 진행 중`;
-                    document.getElementById('chatMessages').innerHTML = ''; // 이전 채팅 초기화
-                    lastMsgCount = 0;
-                    setInterval(fetchMessages, 2000);
-                    startHeartbeat();  // heartbeat 시작
-                    loadAndShowTopicModal(); // 고민 유형 선택 모달 표시
-                }
-            } catch (e) { console.error("세션 실패:", e); }
-        }
+        // --- 아래는 기존 로직 그대로 유지 ---
+        const baseUrl = API_BASE_URL;
+
+        try {
+            const res = await fetch(`${baseUrl}/client/start-session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    client_id: Number(clientId), 
+                    counselor_id: Number(counselorId),
+                    appt_id: apptId ? Number(apptId) : null
+                })
+            });
+            const data = await res.json();
+            if (data.sess_id) {
+                windowSessId = data.sess_id;
+                sessionStorage.setItem('mw_sess_id', String(data.sess_id));
+                document.getElementById('headerSessionId').innerText = `SESS-${data.sess_id} · 상담 진행 중`;
+                document.getElementById('chatMessages').innerHTML = '';
+                lastMsgCount = 0;
+                setInterval(fetchMessages, 2000);
+                startHeartbeat();
+                loadAndShowTopicModal();
+            }
+        } catch (e) { console.error("세션 실패:", e); }
+    }
 
         function renderMessages(msgs) {
             const container = document.getElementById('chatMessages');

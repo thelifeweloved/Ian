@@ -111,8 +111,9 @@ class ApptCreateRequest(BaseModel):
     client_id: int
 
 class ClientStartSessionRequest(BaseModel):
-    client_id: int = Field(..., ge=1)
-    counselor_id: int = Field(..., ge=1)
+    client_id: int
+    counselor_id: int
+    appt_id: Optional[int] = None  # 추가
 
 # ---------------------------------------------------------
 # Helpers & Logic
@@ -253,21 +254,53 @@ def get_client_my_appointment(client_id: int, db: Session = Depends(get_db)):
 
 @app.post("/client/start-session")
 def client_start_session(payload: ClientStartSessionRequest, db: Session = Depends(get_db)):
-    # ACTIVE 세션이 이미 있으면 재사용 (내담자가 열어둔 방에 상담사가 합류하는 구조)
-    existing = db.execute(text("""
-        SELECT id FROM sess
-        WHERE client_id = :clid AND counselor_id = :coid
-          AND (end_at IS NULL) AND (progress IN ('WAITING','ACTIVE'))
-        ORDER BY id DESC LIMIT 1
-    """), {"clid": payload.client_id, "coid": payload.counselor_id}).scalar()
-    if existing:
-        return {"status": "success", "sess_id": int(existing), "reused": True}
-    # 없으면 새 세션 생성
+    
+    # 1. appt_id가 있으면 해당 예약의 세션 재사용 또는 생성
+    if payload.appt_id:
+        # appt에 이미 연결된 세션 확인
+        existing = db.execute(text("""
+            SELECT s.id FROM sess s
+            JOIN appt a ON a.id = :appt_id
+            WHERE s.client_id = a.client_id 
+              AND s.counselor_id = a.counselor_id
+              AND s.progress IN ('WAITING','ACTIVE')
+              AND s.end_at IS NULL
+            ORDER BY s.id DESC LIMIT 1
+        """), {"appt_id": payload.appt_id}).scalar()
+        
+        if existing:
+            return {"status": "success", "sess_id": int(existing), "reused": True}
+
+        # appt에서 counselor_id 가져오기
+        appt = db.execute(text("""
+            SELECT counselor_id, client_id FROM appt WHERE id = :appt_id
+        """), {"appt_id": payload.appt_id}).mappings().first()
+        
+        if appt:
+            coid = appt["counselor_id"]
+            clid = appt["client_id"]
+        else:
+            coid = payload.counselor_id
+            clid = payload.client_id
+    else:
+        coid = payload.counselor_id
+        clid = payload.client_id
+        # 기존 로직: ACTIVE 세션 재사용
+        existing = db.execute(text("""
+            SELECT id FROM sess
+            WHERE client_id = :clid AND counselor_id = :coid
+              AND end_at IS NULL AND progress IN ('WAITING','ACTIVE')
+            ORDER BY id DESC LIMIT 1
+        """), {"clid": clid, "coid": coid}).scalar()
+        if existing:
+            return {"status": "success", "sess_id": int(existing), "reused": True}
+
+    # 새 세션 생성
     new_uuid = str(uuid.uuid4())
     res = db.execute(text("""
         INSERT INTO sess (uuid, counselor_id, client_id, channel, progress)
         VALUES (:uuid, :coid, :clid, 'CHAT', 'ACTIVE')
-    """), {"uuid": new_uuid, "coid": payload.counselor_id, "clid": payload.client_id})
+    """), {"uuid": new_uuid, "coid": coid, "clid": clid})
     db.commit()
     return {"status": "success", "sess_id": int(res.lastrowid), "reused": False}
 
