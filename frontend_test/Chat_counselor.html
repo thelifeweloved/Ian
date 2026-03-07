@@ -308,7 +308,7 @@
                 </div>
             </div>
             <div class="panel-section">
-                <div class="panel-title">DEEPFACE EMOTION SCORE</div>
+                <div class="panel-title">감정 반응 점수</div>
                 <div class="emotion-score-wrap">
                     <span class="emoji emotion-icon" id="emotionEmoji" title="대기중"><i class="fa-solid fa-face-meh"></i></span>
                     <div class="bar-wrap">
@@ -456,7 +456,7 @@
                     statusPollId = setInterval(pollSessionStatus, 1000);
 
                     // ✅ 내담자 감정 폴링 시작
-                    startEmotionPolling();
+                    //startEmotionPolling();
 
                     // ✅ 내담자 영상 수신 시작
                     startVideoReceiver();
@@ -739,7 +739,7 @@
         // ==========================================
         // 4. 영상 제어 및 딥페이스 분석 (기존 유지)
         // ==========================================
-        const localVideo = document.getElementById('localVideo');
+        
         const videoPlaceholder = document.getElementById('videoPlaceholder');
         let analysisTimer = null;
         const canvas = document.createElement('canvas');
@@ -747,15 +747,12 @@
         canvas.width = 320; canvas.height = 240;
 
         const EMOTION_MAP = {
-            neutral:  { ko: '평온',  icon: 'fa-face-meh',      color: '#6c757d' },
-            happy:    { ko: '기쁨',  icon: 'fa-face-smile',    color: '#f59e0b' },
-            sad:      { ko: '슬픔',  icon: 'fa-face-frown',    color: '#3b82f6' },
-            angry:    { ko: '분노',  icon: 'fa-face-angry',    color: '#ef4444' },
-            fear:     { ko: '불안',  icon: 'fa-face-grimace',  color: '#8b5cf6' },
-            surprise: { ko: '놀람',  icon: 'fa-face-surprise', color: '#10b981' },
+            neutral:  { ko: '편안', icon: 'fa-face-meh',     color: '#6c757d' },
+            positive: { ko: '긍정', icon: 'fa-face-smile',   color: '#f59e0b' },
+            caution:  { ko: '민감', icon: 'fa-face-flushed', color: '#8b5cf6' },
         };
 
-        const EMOTION_SCORE_THRESHOLD = 65;
+        const EMOTION_SCORE_THRESHOLD = 45;
 
         let _lastEmotionUI = {
             dominant: null,
@@ -810,77 +807,179 @@
             const info = EMOTION_MAP[dominant] || { ko: '분석중', icon: 'fa-face-meh', color: '#6c757d' };
             barEl.style.width = pct + '%';
             barEl.style.background = info.color;
-            labelEl.textContent = info.ko + ' ' + pct + '%';
+            labelEl.textContent = `${info.ko} ${pct}%`;
             emojiEl.innerHTML = `<i class="fa-solid ${info.icon}"></i>`;
             emojiEl.style.color = info.color;
         }
 
         // ── 내담자 영상 수신 (ws/view) ──────────────────────────
         let _viewerWs = null;
-        let _lastEmotionWsAt = 0; // ws(view)로 감정 수신 시각(ms)
-
+        let _signalWs = null;
+        let _lastEmotionWsAt = 0;
         let _rtcPc = null;
 
         function startVideoReceiver() {
             if (!window._mwSessId) return;
+
+            stopVideoReceiver();
+
             const protocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
             const wsHost = API_BASE_URL.replace(/^https?:\/\//, '');
 
+            console.log('[counselor] startVideoReceiver | sess_id =', window._mwSessId);
+
             // ── WebRTC 수신 (영상) ──
-            _rtcPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            _rtcPc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
             _rtcPc.ontrack = (e) => {
+                console.log('[counselor] ontrack fired', e.streams);
+
                 const videoEl = document.getElementById('clientVideo');
                 const placeholder = document.getElementById('videoPlaceholder');
                 const badge = document.getElementById('liveBadge');
+
                 videoEl.srcObject = e.streams[0];
                 videoEl.style.display = 'block';
                 placeholder.style.display = 'none';
                 badge.style.display = 'inline-flex';
+
+                videoEl.play().catch(err => {
+                    console.warn('[counselor] video play failed', err);
+                });
             };
 
-            const signalWs = new WebSocket(`${protocol}://${wsHost}/ws/signal/${window._mwSessId}/counselor`);
+            _rtcPc.onconnectionstatechange = () => {
+                console.log('[counselor] pc connectionState =', _rtcPc.connectionState);
+            };
+
+            _rtcPc.oniceconnectionstatechange = () => {
+                console.log('[counselor] pc iceConnectionState =', _rtcPc.iceConnectionState);
+            };
+
+            _signalWs = new WebSocket(`${protocol}://${wsHost}/ws/signal/${window._mwSessId}/counselor`);
+            const signalWs = _signalWs;
+
+            signalWs.onopen = () => {
+                console.log('[counselor] signal ws open | sess_id =', window._mwSessId);
+            };
+
             signalWs.onmessage = async (e) => {
+                console.log('[counselor] signal ws message =', e.data);
+
                 const msg = JSON.parse(e.data);
+
                 if (msg.type === 'offer') {
+                    console.log('[counselor] received offer');
+
                     await _rtcPc.setRemoteDescription(new RTCSessionDescription(msg));
+
                     const answer = await _rtcPc.createAnswer();
                     await _rtcPc.setLocalDescription(answer);
-                    signalWs.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+
+                    if (signalWs.readyState === WebSocket.OPEN) {
+                        signalWs.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+                        console.log('[counselor] sent answer');
+                    } else {
+                        console.log('[counselor] signal ws not open when sending answer');
+                    }
+
                 } else if (msg.type === 'candidate' && msg.candidate) {
-                    try { await _rtcPc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(_) {}
+                    console.log('[counselor] received candidate');
+                    try {
+                        await _rtcPc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                    } catch (err) {
+                        console.error('[counselor] addIceCandidate error', err);
+                    }
                 }
             };
+
+            signalWs.onerror = (e) => {
+                console.error('[counselor] signal ws error', e);
+            };
+
+            signalWs.onclose = (e) => {
+                console.log('[counselor] signal ws close', e.code, e.reason);
+            };
+
             _rtcPc.onicecandidate = (e) => {
-                if (e.candidate) signalWs.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+                if (e.candidate) {
+                    console.log('[counselor] send candidate');
+                    if (signalWs.readyState === WebSocket.OPEN) {
+                        signalWs.send(JSON.stringify({
+                            type: 'candidate',
+                            candidate: e.candidate
+                        }));
+                    } else {
+                        console.log('[counselor] signal ws not open when sending candidate');
+                    }
+                }
             };
 
             // ── 감정 분석 결과 수신 (ws/view 유지) ──
             _viewerWs = new WebSocket(`${protocol}://${wsHost}/ws/view/${window._mwSessId}`);
+
+            _viewerWs.onopen = () => {
+                console.log('[counselor] viewer ws open | sess_id =', window._mwSessId);
+            };
+
+            function getEmotionPayload(result) {
+                const ui = result?.ui || {};
+                return {
+                    dominant: ui.label || result?.dominant || 'neutral',
+                    score: Number(ui.score ?? result?.score ?? 0),
+                };
+            }
+
             _viewerWs.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
+                    console.log('[counselor] viewer ws message =', data);
+
                     if (data.type === 'emotion' && data.result) {
                         const result = data.result;
-                        if (result.status === 'success' && result.dominant) {
+
+                        if (result.status === 'success') {
                             _lastEmotionWsAt = Date.now();
 
-                            const dominant = result.dominant;
-                            const score = Number(result.scores?.[dominant] || 0);
+                            const payload = getEmotionPayload(result);
 
-                            if (shouldUpdateEmotionUI(dominant, score)) {
-                                updateEmotionUI(dominant, score);
+                            if (shouldUpdateEmotionUI(payload.dominant, payload.score)) {
+                                updateEmotionUI(payload.dominant, payload.score);
                             }
+                        } else if (result.status === 'no_face' || result.status === 'error') {
+                            _lastEmotionWsAt = Date.now();
+
+                            _lastEmotionUI = {
+                                dominant: 'neutral',
+                                score: 0,
+                                updatedAt: Date.now()
+                            };
+
+                            updateEmotionUI('neutral', 0);
                         }
                     }
-                } catch(e) {}
+                } catch (e) {
+                    console.error('[viewer ws] emotion parse error', e);
+                }
             };
-            _viewerWs.onclose = () => { _viewerWs = null; };
-            _viewerWs.onerror = () => { _viewerWs = null; };
-        }
 
+            _viewerWs.onclose = (e) => {
+                console.log('[counselor] viewer ws close', e.code, e.reason);
+                _viewerWs = null;
+            };
+
+            _viewerWs.onerror = (e) => {
+                console.error('[counselor] viewer ws error', e);
+                _viewerWs = null;
+            };
+        }
         function stopVideoReceiver() {
             if (_rtcPc) { _rtcPc.close(); _rtcPc = null; }
             if (_viewerWs) { try { _viewerWs.close(); } catch(e) {} _viewerWs = null; }
+            if (_signalWs) { try { _signalWs.close(); } catch(e) {} _signalWs = null; }
+
             const videoEl = document.getElementById('clientVideo');
             if (videoEl) { videoEl.srcObject = null; videoEl.style.display = 'none'; }
             const frameEl = document.getElementById('clientFrame');
@@ -902,7 +1001,7 @@
                 if (_lastEmotionWsAt && (Date.now() - _lastEmotionWsAt) < 5000) return;
                 try {
                     const baseUrl = API_BASE_URL;
-                    const res = await fetch(`${baseUrl}/sessions/${window._mwSessId}/emotions`);
+                    const res = await fetch(`${baseUrl}/sessions/${window._mwSessId}/faces`);
                     if (!res.ok) return;
                     const data = await res.json();
                     const items = (data.items || []);
@@ -910,6 +1009,11 @@
                     if (latest && latest.label && latest.score != null) {
                         const dominant = latest.label;
                         const score = Number(latest.score || 0);
+
+                        if (score <= 0) {
+                            updateEmotionUI('neutral', 0);
+                            return;
+                        }
 
                         if (shouldUpdateEmotionUI(dominant, score)) {
                             updateEmotionUI(dominant, score);

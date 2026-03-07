@@ -839,6 +839,7 @@ _ok_face_cache: dict = {}     # sess_db_id(int) -> bool (consent cache)
 _viewer_ws: dict = {}  # sess_id → 상담사 WebSocket (영상 중계용)
 _heartbeat_store: dict = {}
 _last_face_saved: dict = {} 
+_signal_peers: dict = {}
 
 
 def _ok_face_cached(db: Session, sess_db_id: int) -> bool:
@@ -974,114 +975,180 @@ def heartbeat_check(sess_id: int, db: Session = Depends(get_db)):
             
 
 @app.websocket("/ws/analyze/{session_id}")
-
 async def websocket_analyze(websocket: WebSocket, session_id: str, db: Session = Depends(get_db)):
-    """내담자 프레임(base64)을 받아 DeepFace 분석 → ws/view로 push + _face_buffer에 누적(실시간 DB insert 제거)"""
-    await websocket.accept()
+    """내담자 프레임(base64)을 받아 표정 보조지표 분석 → ws/view로 push + _face_buffer에 누적"""
+    print(f"[analyze] connect requested | session_id={session_id}")
+
     try:
+        await websocket.accept()
+        print(f"[analyze] accepted | session_id={session_id}")
+
         while True:
             raw = await websocket.receive_text()
+            print(f"[analyze] received raw text | session_id={session_id} | length={len(raw) if raw else 0}")
+
             try:
                 payload = json.loads(raw) if raw else {}
-            except Exception:
+            except Exception as e:
+                print(f"[analyze] json parse error | session_id={session_id} | error={repr(e)}")
                 payload = {}
 
             image_b64 = payload.get("image_base64")
-            sess_db_id = payload.get("sess_db_id")  # client가 보내는 DB sess_id
+            sess_db_id = payload.get("sess_db_id")
+
             if not image_b64 or sess_db_id is None:
+                print(f"[analyze] invalid payload | session_id={session_id} | sess_db_id={sess_db_id} | has_image={bool(image_b64)}")
                 continue
 
-            # 분석 주기 제한 (서버 부하 제어)
             now = _time.time()
             last = _face_last_analyze.get(session_id, 0.0)
             if (now - last) < float(FACE_ANALYZE_INTERVAL):
+                print(f"[analyze] skipped by interval | session_id={session_id} | delta={now - last:.3f}")
                 continue
+
             _face_last_analyze[session_id] = now
 
-            # DeepFace 분석 (CPU thread)
-            result = await asyncio.to_thread(analyze_face_logic, session_id, image_b64)
+            try:
+                result = await asyncio.to_thread(analyze_face_logic, session_id, image_b64)
+                ui = result.get("ui") or {}
+                print(
+                    f"[analyze] analysis result | session_id={session_id} "
+                    f"| status={result.get('status')} "
+                    f"| ui_label={ui.get('label')} "
+                    f"| ui_score={ui.get('score')}"
+                )
+            except Exception as e:
+                print(f"[analyze] analyze_face_logic error | session_id={session_id} | error={repr(e)}")
+                continue
 
-            # ws/view 실시간 push는 유지
             viewer = _viewer_ws.get(str(session_id)) or _viewer_ws.get(session_id)
             if viewer and viewer.client_state == WebSocketState.CONNECTED:
                 try:
                     await viewer.send_text(json.dumps({"type": "emotion", "result": result}))
-                except Exception:
+                    print(f"[analyze] pushed to viewer | session_id={session_id}")
+                except Exception as e:
+                    print(f"[analyze] viewer send error | session_id={session_id} | error={repr(e)}")
                     _viewer_ws.pop(str(session_id), None)
                     _viewer_ws.pop(session_id, None)
 
             if result.get("status") == "success":
                 try:
                     sid_int = int(sess_db_id)
-                except Exception:
+                except Exception as e:
+                    print(f"[analyze] sess_db_id int cast error | session_id={session_id} | sess_db_id={sess_db_id} | error={repr(e)}")
                     continue
 
-                dominant = result.get("dominant") or "neutral"
-                scores = (result.get("scores") or {})
-                score = float(scores.get(dominant, 0.0) or 0.0)
+                ui = result.get("ui") or {}
+                label = ui.get("label") or result.get("dominant") or "neutral"
+                score = float(ui.get("score", result.get("score", 0.0)) or 0.0)
+                dist3 = result.get("dist3") or {
+                    "positive": 0.0,
+                    "neutral": 1.0,
+                    "caution": 0.0,
+                }
+                meta = result.get("meta") or {}
+                meta["engine"] = "deepface_ws"
+                meta["version"] = "1.2"
 
-                # ok_face는 캐시로 조회 최소화
-                if _ok_face_cached(db, sid_int):
-                    if should_store_face(str(session_id), dominant, score, now):
-                        row = {
-                            "sid": sid_int,
-                            "at": datetime.utcnow(),
-                            "l": dominant,
-                            "s": round(score, 3),
-                            "d": json.dumps(scores),
-                            "meta": json.dumps({"engine": "deepface_ws", "version": "1.1"}),
-                        }
-                        _face_buffer.setdefault(sid_int, []).append(row)
+                try:
+                    if _ok_face_cached(db, sid_int):
+                        if should_store_face(str(session_id), label, score, now):
+                            row = {
+                                "sid": sid_int,
+                                "at": datetime.utcnow(),
+                                "l": label,
+                                "s": round(score, 3),
+                                "d": json.dumps(dist3, ensure_ascii=False),
+                                "meta": json.dumps(meta, ensure_ascii=False),
+                            }
+                            _face_buffer.setdefault(sid_int, []).append(row)
+                            print(f"[analyze] buffered face row | session_id={session_id} | sid={sid_int} | label={label} | score={score:.3f}")
+                        else:
+                            print(f"[analyze] skipped store by policy | session_id={session_id} | sid={sid_int}")
+                    else:
+                        print(f"[analyze] ok_face false | session_id={session_id} | sid={sid_int}")
+                except Exception as e:
+                    print(f"[analyze] face buffer/store error | session_id={session_id} | sid={sid_int} | error={repr(e)}")
 
-            # prev score는 UI/저장 최적화용으로 유지
-            if result.get("status") == "success":
-                dominant = result.get("dominant") or "neutral"
-                score = float((result.get("scores") or {}).get(dominant, 0.0) or 0.0)
                 _face_prev_scores[session_id] = score
 
     except WebSocketDisconnect:
-        pass
-    except Exception:
-        pass
+        print(f"[analyze] disconnected | session_id={session_id}")
+    except Exception as e:
+        print(f"[analyze] outer error | session_id={session_id} | error={repr(e)}")
     finally:
-        # 세션 캐시 정리(메모리 누수 방지)
+        print(f"[analyze] cleanup | session_id={session_id}")
         _face_prev_scores.pop(session_id, None)
         _face_last_analyze.pop(session_id, None)
         _last_face_saved.pop(session_id, None)
 
-# ── WebRTC 시그널링 ──────────────────────────────────────────
-_signal_peers: dict = {}  # sess_id → {"client": ws, "counselor": ws}
-
 @app.websocket("/ws/signal/{session_id}/{role}")
 async def websocket_signal(websocket: WebSocket, session_id: str, role: str):
-    """WebRTC 시그널링: offer/answer/ICE 교환 relay"""
-    await websocket.accept()
-    if session_id not in _signal_peers:
-        _signal_peers[session_id] = {}
-    _signal_peers[session_id][role] = websocket
-    peer_role = "counselor" if role == "client" else "client"
+    """WebRTC 시그널링: offer / answer / ICE candidate relay"""
+    print(f"[signal] connect requested | session_id={session_id} | role={role}")
+
     try:
+        await websocket.accept()
+        print(f"[signal] accepted | session_id={session_id} | role={role}")
+
+        if session_id not in _signal_peers:
+            _signal_peers[session_id] = {}
+
+        _signal_peers[session_id][role] = websocket
+        print(f"[signal] peer registered | session_id={session_id} | role={role} | peers={list(_signal_peers[session_id].keys())}")
+
+        peer_role = "counselor" if role == "client" else "client"
+
         while True:
             msg = await websocket.receive_text()
+            print(f"[signal] received message | session_id={session_id} | role={role} | length={len(msg) if msg else 0}")
+
             peer = _signal_peers.get(session_id, {}).get(peer_role)
+
             if peer and peer.client_state == WebSocketState.CONNECTED:
                 try:
                     await peer.send_text(msg)
-                except Exception:
+                    print(f"[signal] relayed message | session_id={session_id} | from={role} | to={peer_role}")
+                except Exception as e:
+                    print(f"[signal] relay error | session_id={session_id} | from={role} | to={peer_role} | error={repr(e)}")
                     _signal_peers.get(session_id, {}).pop(peer_role, None)
-    except:
-        _signal_peers.get(session_id, {}).pop(role, None)
+            else:
+                print(f"[signal] peer not connected | session_id={session_id} | from={role} | expected_peer={peer_role}")
+
+    except WebSocketDisconnect:
+        print(f"[signal] disconnected | session_id={session_id} | role={role}")
+    except Exception as e:
+        print(f"[signal] outer error | session_id={session_id} | role={role} | error={repr(e)}")
+    finally:
+        if session_id in _signal_peers:
+            _signal_peers[session_id].pop(role, None)
+            if not _signal_peers[session_id]:
+                _signal_peers.pop(session_id, None)
+        print(f"[signal] cleanup | session_id={session_id} | role={role}")
 
 @app.websocket("/ws/view/{session_id}")
 async def websocket_view(websocket: WebSocket, session_id: str):
-    """상담사가 연결 → 내담자 프레임을 실시간 수신"""
-    await websocket.accept()
-    _viewer_ws[session_id] = websocket
+    """상담사가 연결 → 내담자 프레임/감정 결과를 실시간 수신"""
+    print(f"[view] connect requested | session_id={session_id}")
+
     try:
+        await websocket.accept()
+        print(f"[view] accepted | session_id={session_id}")
+
+        _viewer_ws[session_id] = websocket
+        print(f"[view] viewer registered | session_id={session_id}")
+
         while True:
-            await websocket.receive_text()  # keep-alive
-    except:
+            msg = await websocket.receive_text()
+            print(f"[view] keepalive/message | session_id={session_id} | length={len(msg) if msg else 0}")
+
+    except WebSocketDisconnect:
+        print(f"[view] disconnected | session_id={session_id}")
+    except Exception as e:
+        print(f"[view] outer error | session_id={session_id} | error={repr(e)}")
+    finally:
         _viewer_ws.pop(session_id, None)
+        print(f"[view] cleanup | session_id={session_id}")
 
 @app.post("/face/save")
 def save_face(payload: FaceSaveRequest, db: Session = Depends(get_db)):
@@ -1105,19 +1172,31 @@ class HttpAnalyzeRequest(BaseModel):
 async def http_analyze(payload: HttpAnalyzeRequest, db: Session = Depends(get_db)):
     result = await asyncio.to_thread(analyze_face_logic, payload.session_id, payload.image_base64)
     if result.get("status") == "success" and payload.sess_db_id:
-        dominant = result["dominant"]
-        score    = result["scores"].get(dominant, 0.0)
-        prev     = _face_prev_scores.get(payload.session_id)
+        ui = result.get("ui") or {}
+        dominant = ui.get("label") or result.get("dominant") or "neutral"
+        score = float(ui.get("score", result.get("score", 0.0)) or 0.0)
+        dist = result.get("dist3") or {"positive": 0.0, "neutral": 1.0, "caution": 0.0}
+        prev = _face_prev_scores.get(payload.session_id)
         if prev is None or abs(score - prev) >= FACE_CHANGE_THRESHOLD:
             try:
                 ok = db.execute(text("SELECT ok_face FROM sess WHERE id = :sid"), {"sid": int(payload.sess_db_id)}).scalar()
                 if ok:
-                    db.execute(text("INSERT INTO face (sess_id, at, label, score, dist, meta) VALUES (:sid, NOW(), :l, :s, :d, :meta)"),
-                               {"sid": int(payload.sess_db_id), "l": dominant, "s": round(score, 2), "d": json.dumps(result["scores"]), "meta": json.dumps({"engine": "deepface", "version": "0.4"})})
+                    db.execute(
+                        text("INSERT INTO face (sess_id, at, label, score, dist, meta) VALUES (:sid, NOW(), :l, :s, :d, :meta)"),
+                        {
+                            "sid": int(payload.sess_db_id),
+                            "l": dominant,
+                            "s": round(score, 2),
+                            "d": json.dumps(dist, ensure_ascii=False),
+                            "meta": json.dumps(result.get("meta") or {"engine": "deepface_http", "version": "1.2"}, ensure_ascii=False),
+                        }
+                    )
                     db.commit()
-            except: db.rollback()
+            except Exception:
+                db.rollback()
         _face_prev_scores[payload.session_id] = score
     return result
+
 
 @app.patch("/sessions/{sess_id}/consent")
 def update_consent(sess_id: int, payload: ConsentRequest, db: Session = Depends(get_db)):

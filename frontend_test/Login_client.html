@@ -360,6 +360,11 @@
                         다른 상담사로 새 예약하기
                     </a>
                 </div>
+                <div style="margin-top:8px;">
+                    <a onclick="handleLogout()" style="font-size:0.85rem;color:#ffaaaa;cursor:pointer;">
+                        로그아웃
+                    </a>
+                </div>
             </div>
         `;
         toggleView('counselor');
@@ -467,6 +472,16 @@
             alert('서버 연결 오류');
         }
     }
+
+    function handleLogout() {
+        localStorage.removeItem('client_id');
+        localStorage.removeItem('client_name');
+        localStorage.removeItem('client_email');
+        localStorage.removeItem('counselor_id');
+        sessionStorage.clear();
+        location.href = 'Landing.html';
+    }
+</script>
 </script>
 </body>
 </html>

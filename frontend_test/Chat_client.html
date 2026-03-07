@@ -561,13 +561,37 @@
             if (this.files[0]) {
                 localVideo.src = URL.createObjectURL(this.files[0]);
                 localVideo.loop = true;
+                localVideo.muted = true;
+                localVideo.playsInline = true;
                 localVideo.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:320px;height:240px;pointer-events:none;';
-                localVideo.oncanplay = () => {
-                    localVideo.play().catch(() => {});
-                    // 파일 영상: captureStream으로 MediaStream 생성
-                    const stream = localVideo.captureStream ? localVideo.captureStream(30) : null;
-                    onVideoStart(stream);
-                    localVideo.oncanplay = null;
+
+                localVideo.oncanplay = async () => {
+                    try {
+                        await localVideo.play();
+                        console.log('[client] file video canplay + play ok');
+
+                        const stream = localVideo.captureStream ? localVideo.captureStream(30) : null;
+                        console.log('[client] captureStream result =', stream);
+
+                        if (!stream) {
+                            console.error('[client] captureStream returned null');
+                            return;
+                        }
+
+                        const tracks = stream.getTracks();
+                        console.log('[client] captureStream tracks =', tracks);
+
+                        if (!tracks || tracks.length === 0) {
+                            console.error('[client] captureStream has no tracks');
+                            return;
+                        }
+
+                        onVideoStart(stream);
+                    } catch (err) {
+                        console.error('[client] file video play/captureStream error', err);
+                    } finally {
+                        localVideo.oncanplay = null;
+                    }
                 };
             }
         });
@@ -575,11 +599,26 @@
         // ── DeepFace 분석용 WebSocket ──
         function openFaceWs() {
             if (_faceWs && _faceWs.readyState <= 1) return;
+
             const protocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
             const wsHost = API_BASE_URL.replace(/^https?:\/\//, '');
-            _faceWs = new WebSocket(`${protocol}://${wsHost}/ws/analyze/${windowSessId}`);
-            _faceWs.onerror = () => { _faceWs = null; };
-            _faceWs.onclose = () => { _faceWs = null; };
+            const ws = new WebSocket(`${protocol}://${wsHost}/ws/analyze/${windowSessId}`);
+
+            _faceWs = ws;
+
+            ws.onopen = () => {
+                console.log('[client] face ws opened');
+            };
+
+            ws.onclose = (e) => {
+                console.log('[client] face ws closed', e.code, e.reason);
+                if (_faceWs === ws) _faceWs = null;
+            };
+
+            ws.onerror = (e) => {
+                console.error('[client] face ws error', e);
+                if (_faceWs === ws) _faceWs = null;
+            };
         }
         function closeFaceWs() {
             if (_faceWs) { try { _faceWs.close(); } catch(e) {} _faceWs = null; }
@@ -589,40 +628,114 @@
         function openSignalWs(onOpen) {
             const protocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
             const wsHost = API_BASE_URL.replace(/^https?:\/\//, '');
-            _signalWs = new WebSocket(`${protocol}://${wsHost}/ws/signal/${windowSessId}/client`);
-            _signalWs.onopen = onOpen;
-            _signalWs.onmessage = async (e) => {
+            const ws = new WebSocket(`${protocol}://${wsHost}/ws/signal/${windowSessId}/client`);
+
+            _signalWs = ws;
+
+            ws.onopen = () => {
+                console.log('[client] signal ws opened | sess_id =', windowSessId);
+                if (typeof onOpen === 'function') onOpen(ws);
+            };
+
+            ws.onmessage = async (e) => {
+                console.log('[client] signal ws message =', e.data);
                 const msg = JSON.parse(e.data);
                 if (!_pc) return;
+
                 if (msg.type === 'answer') {
+                    console.log('[client] received answer');
                     await _pc.setRemoteDescription(new RTCSessionDescription(msg));
                 } else if (msg.type === 'candidate' && msg.candidate) {
-                    try { await _pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch(_) {}
+                    console.log('[client] received candidate');
+                    try {
+                        await _pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                    } catch (err) {
+                        console.error('[client] addIceCandidate error', err);
+                    }
                 }
             };
-            _signalWs.onerror = () => { _signalWs = null; };
-            _signalWs.onclose = () => { _signalWs = null; };
-        }
 
+            ws.onerror = (e) => {
+                console.error('[client] signal ws error', e);
+                if (_signalWs === ws) _signalWs = null;
+            };
+
+            ws.onclose = (e) => {
+                console.log('[client] signal ws close', e.code, e.reason);
+                if (_signalWs === ws) _signalWs = null;
+            };
+        }
         async function startWebRTC(stream) {
-            if (!stream) return; // captureStream 미지원 브라우저면 WebRTC 스킵
-            _pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-            stream.getTracks().forEach(t => _pc.addTrack(t, stream));
+            if (!stream) {
+                console.log('[client] startWebRTC skipped: stream is null');
+                return;
+            }
+
+            const tracks = stream.getTracks();
+            console.log('[client] startWebRTC begin | tracks =', tracks);
+
+            if (!tracks || tracks.length === 0) {
+                console.error('[client] startWebRTC aborted: no tracks in stream');
+                return;
+            }
+
+            _pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
+            tracks.forEach(t => {
+                console.log('[client] addTrack', t.kind, t.readyState);
+                _pc.addTrack(t, stream);
+            });
+
+            _pc.onconnectionstatechange = () => {
+                console.log('[client] pc connectionState =', _pc.connectionState);
+            };
+
+            _pc.oniceconnectionstatechange = () => {
+                console.log('[client] pc iceConnectionState =', _pc.iceConnectionState);
+            };
+
             _pc.onicecandidate = (e) => {
                 if (e.candidate && _signalWs && _signalWs.readyState === WebSocket.OPEN) {
-                    _signalWs.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+                    console.log('[client] sending candidate');
+                    _signalWs.send(JSON.stringify({
+                        type: 'candidate',
+                        candidate: e.candidate
+                    }));
                 }
             };
-            openSignalWs(async () => {
+
+            openSignalWs(async (ws) => {
+                if (!_pc || !ws || ws.readyState !== WebSocket.OPEN) {
+                    console.log('[client] cannot send offer: ws not open (before createOffer)');
+                    return;
+                }
+
                 const offer = await _pc.createOffer();
                 await _pc.setLocalDescription(offer);
-                _signalWs.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+
+                if (ws.readyState !== WebSocket.OPEN) {
+                    console.log('[client] cannot send offer: ws closed before send', ws.readyState);
+                    return;
+                }
+
+                console.log('[client] sending offer');
+                ws.send(JSON.stringify({
+                    type: 'offer',
+                    sdp: offer.sdp
+                }));
             });
         }
-
         function stopWebRTC() {
-            if (_pc) { _pc.close(); _pc = null; }
-            if (_signalWs) { try { _signalWs.close(); } catch(_) {} _signalWs = null; }
+            if (_pc) {
+                _pc.close();
+                _pc = null;
+            }
+            if (_signalWs) {
+                try { _signalWs.close(); } catch (_) {}
+                _signalWs = null;
+            }
         }
 
         // ── 영상 시작/종료 ──
@@ -659,17 +772,32 @@
         function captureAndSend() {
             if (!_rafRunning) return;
             if (!windowSessId) return;
-            if (!_faceWs || _faceWs.readyState !== WebSocket.OPEN) { openFaceWs(); return; }
+
+            if (!_faceWs || _faceWs.readyState !== WebSocket.OPEN) {
+                console.log('[client] face ws not open, reopening...');
+                openFaceWs();
+                return;
+            }
+
             if (!localVideo.videoWidth) return;
-            if (_faceWs.bufferedAmount > 64000) return;
+
+            if (_faceWs.bufferedAmount > 64000) {
+                console.log('[client] face ws bufferedAmount too large, skip frame');
+                return;
+            }
+
             try {
                 _rafCtx.drawImage(localVideo, 0, 0, 320, 240);
                 const b64 = _rafCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+
                 _faceWs.send(JSON.stringify({
                     image_base64: 'data:image/jpeg;base64,' + b64,
                     sess_db_id: windowSessId
                 }));
-            } catch(e) { _faceWs = null; }
+            } catch (e) {
+                console.error('[client] capture/send error', e);
+                _faceWs = null;
+            }
         }
 
         document.getElementById('btnSend').addEventListener('click', sendMessage);

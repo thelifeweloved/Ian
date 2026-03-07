@@ -1,4 +1,3 @@
-
 -- =====================================================
 -- [최종 제출용] MindWay 데이터베이스 스키마
 -- 작성일: 2026.03.07 / 작성자: 정이안
@@ -9,7 +8,7 @@
 SET NAMES utf8mb4;
 
 -- -----------------------------------------------------
--- 1. 상담사 테이블 (counselor)
+-- 1. 상담사 (counselor)
 -- 설명: 시스템을 이용하는 상담사 정보 관리
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS counselor (
@@ -24,10 +23,10 @@ CREATE TABLE IF NOT EXISTS counselor (
     PRIMARY KEY (id),
     UNIQUE KEY uk_counselor_email (email),
     CONSTRAINT ck_counselor_role CHECK (role IN ('ADMIN', 'USER'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='상담사 마스터';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='상담사';
 
 -- -----------------------------------------------------
--- 2. 내담자 테이블 (client)
+-- 2. 내담자 (client)
 -- 설명: 상담을 받는 내담자 정보. status는 운영 정책에 따라 업데이트됨
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS client (
@@ -46,10 +45,10 @@ CREATE TABLE IF NOT EXISTS client (
     UNIQUE KEY uk_client_email (email),
     KEY ix_client_name (name),
     KEY ix_client_status_active (status, active)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='내담자 마스터';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='내담자';
 
 -- -----------------------------------------------------
--- 3. 주제/고민유형 정의 테이블 (topic)
+-- 3. 주제/고민유형 정의 (topic)
 -- 설명: 상담 주제 카테고리. AI가 분류하거나 관리자가 등록함
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS topic (
@@ -66,7 +65,7 @@ CREATE TABLE IF NOT EXISTS topic (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='고민 주제 사전';
 
 -- -----------------------------------------------------
--- 4. 상담 예약 테이블 (appt)
+-- 4. 상담 예약 (appt)
 -- 설명: 상담 세션 시작 전의 예약 정보 관리
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS appt (
@@ -86,7 +85,7 @@ CREATE TABLE IF NOT EXISTS appt (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='예약';
 
 -- -----------------------------------------------------
--- 5. 상담 세션 테이블 (sess)
+-- 5. 상담 세션 (sess)
 -- 설명: 실제 진행되는 상담 단위. 리포트 생성의 기준 단위
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS sess (
@@ -127,7 +126,7 @@ CREATE TABLE IF NOT EXISTS sess (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='상담 세션';
 
 -- -----------------------------------------------------
--- 6. 메시지 테이블 (msg)
+-- 6. 메시지 (msg)
 -- 설명: 상담 중 발생하는 모든 텍스트/시스템 메시지 로그
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS msg (
@@ -146,7 +145,7 @@ CREATE TABLE IF NOT EXISTS msg (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='상담 메시지 로그';
 
 -- -----------------------------------------------------
--- 7. 표정 점수(보조) 테이블 (face)
+-- 7. 표정 점수(보조) (face)
 -- 설명: 동의 시 표정 기반 참고 지표(비식별 수치) 저장. 원본 영상/이미지는 저장하지 않음
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS face (
@@ -165,7 +164,7 @@ CREATE TABLE IF NOT EXISTS face (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='표정 기반 참고 지표';
 
 -- -----------------------------------------------------
--- 8. 내담자 고민유형 매핑 테이블 (client_topic)
+-- 8. 내담자 고민유형 매핑 (client_topic)
 -- 설명: 내담자-주제 N:M 매핑 및 우선순위 관리
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS client_topic (
@@ -181,7 +180,7 @@ CREATE TABLE IF NOT EXISTS client_topic (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='내담자별 주요 고민 매핑';
 
 -- -----------------------------------------------------
--- 9. 참고 신호/조치 테이블 (alert)
+-- 9. 참고 신호/조치 (alert)
 -- 설명: 상담 세션에서 탐지된 참고 신호 및 대응 이력 저장(판단/의사결정 자동 수행 없음)
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS alert (
@@ -204,7 +203,7 @@ CREATE TABLE IF NOT EXISTS alert (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='참고 신호 탐지 이력';
 
 -- -----------------------------------------------------
--- 10. 세션 품질 분석 테이블 (quality)
+-- 10. 세션 품질 분석 (quality)
 -- 설명: 종료된 상담의 흐름/품질 점수(세션당 1건)
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS quality (
@@ -221,7 +220,7 @@ CREATE TABLE IF NOT EXISTS quality (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='상담 품질 종합 분석';
 
 -- -----------------------------------------------------
--- 11. 텍스트 정서 분석 테이블 (text_emotion)
+-- 11. 텍스트 정서 분석 (text_emotion)
 -- 설명: 메시지 단위 정서 라벨/점수 저장(모델 메타 포함)
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS text_emotion (
@@ -238,8 +237,9 @@ CREATE TABLE IF NOT EXISTS text_emotion (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='메시지별 정서 분석 결과';
 
 -- -----------------------------------------------------
--- 12. 토픽별 세션 분석 요약 테이블 (sess_analysis)
+-- 12. 토픽별 세션 분석 요약 (sess_analysis)
 -- 설명: 세션 종료 후 요약(summary)과 상담사 의견(음표)을 토픽별로 저장
+-- 변경: UNIQUE KEY 이름을 uk_sess_analysis_topic으로 변경 (sess_topic과 충돌 방지)
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS sess_analysis (
     id         BIGINT NOT NULL AUTO_INCREMENT,
@@ -249,17 +249,24 @@ CREATE TABLE IF NOT EXISTS sess_analysis (
     note       TEXT NOT NULL COMMENT '상담사 의견(필수)',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_sess_topic (sess_id, topic_id),
+    UNIQUE KEY uk_sess_analysis_topic (sess_id, topic_id),
     CONSTRAINT fk_sess_analysis_sess FOREIGN KEY (sess_id) REFERENCES sess(id),
     CONSTRAINT fk_sess_analysis_topic FOREIGN KEY (topic_id) REFERENCES topic(id)
-    -- 상담사 메모를 공백까지 막고 싶으면 아래 CHECK를 추가(선택)
-    -- ,CONSTRAINT ck_sess_analysis_note_nonempty CHECK (CHAR_LENGTH(TRIM(음표)) >= 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='세션 요약 및 상담사 의견';
 
-CREATE TABLE sess_topic (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    sess_id BIGINT NOT NULL,
-    topic_id INT NOT NULL,
-    prio INT DEFAULT 1,
-    UNIQUE KEY uk_sess_topic (sess_id, topic_id)
-);
+-- -----------------------------------------------------
+-- 13. 세션 신청 주제 매핑 (sess_topic)
+-- 설명: 내담자가 상담 시작 시 직접 선택한 고민 주제를 세션 단위로 저장
+--       sess_analysis(AI 분석 주제)와 비교하여 주제 일치 여부 판단에 활용
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS sess_topic (
+    id         BIGINT NOT NULL AUTO_INCREMENT,
+    sess_id    BIGINT NOT NULL COMMENT '상담 세션 ID',
+    topic_id   BIGINT NOT NULL COMMENT '내담자가 선택한 주제 ID',
+    prio       TINYINT NOT NULL DEFAULT 1 COMMENT '선택 우선순위(1~3)',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_sess_topic (sess_id, topic_id),
+    CONSTRAINT fk_sess_topic_sess FOREIGN KEY (sess_id) REFERENCES sess(id),
+    CONSTRAINT fk_sess_topic_topic FOREIGN KEY (topic_id) REFERENCES topic(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='세션별 내담자 신청 주제 매핑';
