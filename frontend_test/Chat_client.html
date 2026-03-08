@@ -521,40 +521,46 @@
             // 영상 미동의 → 그냥 닫힘 (채팅만)
         });
 
-        document.getElementById('btnSelectWebcam').addEventListener('click', () => {
+        document.getElementById('btnSelectWebcam').addEventListener('click', async () => {
             sourceModal.classList.remove('show');
-            
-            // 1. 브라우저가 카메라 API를 지원하는지 (보안 환경인지) 확인
+
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                alert("웹캠 기능을 사용할 수 없는 환경입니다.\n(원인: 브라우저 주소창이 http://127.0.0.1 이거나 https 환경인지 확인해주세요.)");
+                alert("웹캠 기능을 사용할 수 없는 환경입니다.\nhttps 환경인지 확인해주세요.");
                 return;
             }
 
-            // 2. 카메라 호출 및 에러 원인 분석
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(stream => {
-                    localVideo.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:320px;height:240px;pointer-events:none;';
-                    localVideo.srcObject = stream;
-                    localVideo.play().catch(() => {});
-                    onVideoStart(stream);
-                })
-                .catch(err => {
-                    console.error("웹캠 연결 에러:", err);
-                    if (err.name === 'NotAllowedError') {
-                        alert("카메라 권한이 차단되었습니다.\n주소창 왼쪽의 '자물쇠' 아이콘을 눌러 카메라 권한을 '허용'으로 변경해주세요.");
-                    } else if (err.name === 'NotFoundError') {
-                        alert("연결된 카메라 장치를 찾을 수 없습니다.\n카메라가 컴퓨터에 잘 연결되어 있는지 확인해주세요.");
-                    } else if (err.name === 'NotReadableError') {
-                        alert("카메라를 불러올 수 없습니다.\n줌(Zoom)이나 다른 프로그램이 카메라를 이미 사용 중인지 확인하고 종료해주세요.");
-                    } else {
-                        alert("웹캠 로드 실패: " + err.message);
-                    }
-                });
-        });
+            try {
+                // 사용 가능한 카메라 목록 조회
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cameras = devices.filter(d => d.kind === "videoinput");
 
-        document.getElementById('btnSelectFile').addEventListener('click', () => {
-            sourceModal.classList.remove('show');
-            document.getElementById('videoFileInput').click();
+                if (cameras.length === 0) {
+                    throw new Error("사용 가능한 카메라 없음");
+                }
+
+                // 첫 번째 카메라 사용 (내장/외장 모두 대응)
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: cameras[0].deviceId ? { exact: cameras[0].deviceId } : undefined }
+                });
+
+                localVideo.style.cssText =
+                    'position:fixed;left:-9999px;top:-9999px;width:320px;height:240px;pointer-events:none;';
+                localVideo.srcObject = stream;
+                localVideo.play().catch(() => {});
+
+                onVideoStart(stream);
+
+            } catch (err) {
+                console.error("웹캠 연결 에러:", err);
+
+                if (err.name === 'NotAllowedError') {
+                    alert("카메라 권한이 차단되었습니다.\n브라우저 주소창의 자물쇠 아이콘에서 카메라 권한을 허용해주세요.");
+                } else if (err.name === 'NotReadableError') {
+                    alert("카메라를 사용할 수 없습니다.\n다른 프로그램이 카메라를 사용 중인지 확인해주세요.");
+                } else {
+                    alert("웹캠 로드 실패: " + err.message);
+                }
+            }
         });
 
         document.getElementById('videoFileInput').addEventListener('change', function() {
