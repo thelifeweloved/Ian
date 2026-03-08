@@ -910,13 +910,18 @@ async function closeSession(satScore, endReason = 'NORMAL') {
         // - 인터넷 끊김: beacon 전송 불가 → 세션 그대로 유지 (heartbeat 자동종료 없음)
         window.addEventListener('beforeunload', () => {
             if (_sessionClosed || !windowSessId) return;
+
+            // 새로고침 상태라면 DROPOUT 보내지 않음
+            if (sessionStorage.getItem('mw_refreshing') === '1') return;
+
             sessionStorage.setItem('mw_refreshing', '1');
             sessionStorage.setItem('mw_sess_id', String(windowSessId));
+
             const baseUrl = API_BASE_URL;
             navigator.sendBeacon(
                 `${baseUrl}/sessions/${windowSessId}/close`,
                 new Blob([JSON.stringify({ end_reason: 'DROPOUT', sat: null, sat_note: null })],
-                         { type: 'application/json' })
+                        { type: 'application/json' })
             );
         });
 
@@ -959,22 +964,29 @@ async function closeSession(satScore, endReason = 'NORMAL') {
         function onTopicChipClick(chip, topic) {
             const id = topic.id;
             const isEtc = (topic.code || '').toUpperCase() === 'ETC' || topic.name === '기타';
+
             if (chip.classList.contains('selected')) {
-                // 선택 해제
                 chip.classList.remove('selected');
                 _selectedTopics = _selectedTopics.filter(t => t !== id);
                 if (isEtc) _etcTopicId = null;
             } else {
-                if (_selectedTopics.length >= 3) return; // 최대 3개
+
+                if (_selectedTopics.length >= 3) return;
+
                 if (isEtc) {
-                    // 기타 선택 시 입력 모달 열기
                     _etcTopicId = id;
                     document.getElementById('topicEtcModal').classList.add('show');
                     return;
                 }
+
                 chip.classList.add('selected');
-                _selectedTopics.push(id);
+
+                // 🔹 중복 방지
+                if (!_selectedTopics.includes(id)) {
+                    _selectedTopics.push(id);
+                }
             }
+
             updateTopicUI();
         }
 
@@ -982,7 +994,7 @@ async function closeSession(satScore, endReason = 'NORMAL') {
             const cnt = _selectedTopics.length;
             document.getElementById('topicSelectedCount').textContent = `${cnt}개 선택됨 (최대 3개)`;
             document.getElementById('topicModalComplete').disabled = cnt === 0;
-            // 최대 3개 도달 시 미선택 chip 비활성
+
             document.querySelectorAll('.topic-chip:not(.selected)').forEach(c => {
                 c.classList.toggle('disabled', cnt >= 3);
             });
@@ -990,17 +1002,24 @@ async function closeSession(satScore, endReason = 'NORMAL') {
 
         // 기타 모달 확인
         document.getElementById('topicEtcConfirm').addEventListener('click', () => {
+
             const val = document.getElementById('topicEtcInput').value.trim();
-            if (!val) { alert('내용을 입력해주세요.'); return; }
+            if (!val) { 
+                alert('내용을 입력해주세요.'); 
+                return; 
+            }
+
             if (_etcTopicId && !_selectedTopics.includes(_etcTopicId)) {
                 _selectedTopics.push(_etcTopicId);
-                // grid에서 기타 chip 선택 표시
+
                 const etcChip = document.querySelector(`.topic-chip[data-id="${_etcTopicId}"]`);
                 if (etcChip) etcChip.classList.add('selected');
             }
+
             document.getElementById('topicEtcModal').classList.remove('show');
             updateTopicUI();
         });
+
         document.getElementById('topicEtcCancel').addEventListener('click', () => {
             _etcTopicId = null;
             document.getElementById('topicEtcInput').value = '';
@@ -1015,45 +1034,64 @@ async function closeSession(satScore, endReason = 'NORMAL') {
 
         // 완료 버튼
         document.getElementById('topicModalComplete').addEventListener('click', async () => {
+
             if (_selectedTopics.length === 0) return;
+
             const baseUrl = API_BASE_URL;
+
             try {
                 await fetch(`${baseUrl}/sessions/${windowSessId}/topics`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ topic_ids: _selectedTopics })
+                    body: JSON.stringify({
+                        topic_ids: _selectedTopics
+                    })
                 });
             } catch (e) {
                 console.error('topic 저장 실패:', e);
             }
+
+            // 🔹 저장 후 배열 초기화 (세션 꼬임 방지)
+            _selectedTopics = [];
+
             document.getElementById('topicSelectModal').classList.remove('show');
             showConsentModalOnce();
         });
 
         document.addEventListener("DOMContentLoaded", async () => {
+
             const isRefresh   = sessionStorage.getItem('mw_refreshing');
             const savedSessId = sessionStorage.getItem('mw_sess_id');
 
-            // 플래그 즉시 제거
             sessionStorage.removeItem('mw_refreshing');
 
             if (isRefresh && savedSessId) {
-                // ── 새로고침 → reactivate로 DROPOUT 취소 후 세션 복구 ──
+
                 const baseUrl = API_BASE_URL;
+
                 try {
                     await fetch(`${baseUrl}/sessions/${savedSessId}/reactivate`, { method: 'POST' });
-                } catch (e) { console.warn('reactivate 실패:', e); }
+                } catch (e) { 
+                    console.warn('reactivate 실패:', e); 
+                }
 
                 windowSessId = savedSessId;
-                document.getElementById('headerSessionId').innerText = `SESS-${savedSessId} · 상담 진행 중`;
+
+                document.getElementById('headerSessionId').innerText =
+                    `SESS-${savedSessId} · 상담 진행 중`;
+
                 setInterval(fetchMessages, 2000);
+
                 startHeartbeat();
-                // 고민 유형 모달은 이미 선택했으므로 스킵
+
             } else {
-                // ── 최초 접속 / 탭 닫고 재접속 → 새 세션 생성 ──
+
                 sessionStorage.removeItem('mw_sess_id');
+
                 await initSession();
+
             }
+
         });
     </script>
 </body>

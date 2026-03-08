@@ -355,6 +355,21 @@ def get_session_status(sess_id: int, db: Session = Depends(get_db)):
 @app.post("/messages")
 def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
     try:
+        # -------------------------------
+        # 세션 상태 확인 (추가된 부분)
+        # -------------------------------
+        sess = db.execute(
+            text("SELECT progress FROM sess WHERE id = :sid"),
+            {"sid": payload.sess_id}
+        ).mappings().first()
+
+        if not sess:
+            raise HTTPException(status_code=404, detail="session not found")
+
+        if sess["progress"] != "ACTIVE":
+            raise HTTPException(status_code=400, detail="session closed")
+        # -------------------------------
+
         res = db.execute(text("""
             INSERT INTO msg (sess_id, sender_type, sender_id, text, file_url, at)
             VALUES (:sid, :speaker, :speaker_id, :text, :file_url, NOW())
@@ -399,6 +414,7 @@ def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
 
         db.commit()
         return {"status": "saved", "msg_id": msg_id, "detection": detection}
+
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -968,7 +984,7 @@ def heartbeat_check(sess_id: int, db: Session = Depends(get_db)):
             db.rollback()
             print(f"Heartbeat 5분 타임아웃 처리 에러: {e}")
 
-    return {"alive": elapsed <= 15, "elapsed": round(elapsed)}
+    return {"alive": elapsed <= 60, "elapsed": round(elapsed)}
             
 
 @app.websocket("/ws/analyze/{session_id}")
