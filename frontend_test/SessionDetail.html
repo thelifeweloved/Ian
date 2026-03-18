@@ -148,16 +148,22 @@
         .full-chat-wrap { max-height: 420px; overflow-y: auto; border: 1px solid #e8ecf4; border-radius: 8px; padding: 12px 16px; background: #fafbfc; }
         .full-chat-wrap::-webkit-scrollbar { width: 5px; }
         .full-chat-wrap::-webkit-scrollbar-thumb { background: #dde2ef; border-radius: 4px; }
+
         .chat-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start; }
-        .chat-row.row-client { flex-direction: row; }
         .chat-row.row-client { justify-content: flex-start; }
         .chat-row.row-counselor { justify-content: flex-end; }
-        .chat-bubble { max-width: 72%; padding: 8px 12px; border-radius: 12px; font-size: 0.88rem; line-height: 1.5; word-break: break-word; }
+
+        .chat-row > div { max-width: 72%; }
+
+        .chat-bubble { padding: 8px 12px; border-radius: 12px; font-size: 0.88rem; line-height: 1.5; word-break: break-word; }
         .chat-row.row-client .chat-bubble { background: #fff; border: 1px solid #e8ecf4; color: #333; border-radius: 4px 12px 12px 12px; }
         .chat-row.row-counselor .chat-bubble { background: #7389f4; color: #fff; border-radius: 12px 4px 12px 12px; }
+
         .chat-meta { font-size: 0.72rem; color: #aab0be; white-space: nowrap; margin-top: 4px; }
         .chat-row.row-counselor .chat-meta { text-align: right; }
+
         .chat-empty { color: #aab0be; font-size: 0.88rem; text-align: center; padding: 20px 0; }
+
         /* 신호 탐지 구간 발화 로그 (overflow: hidden 추가하여 라운드 디자인 보호) */
         .evidence-table-wrap { overflow: hidden; border: 1px solid #e8ecf4; border-radius: 8px; }
         .evidence-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -175,6 +181,133 @@
             .action-bar, .save-bar { display: none !important; }
             .report-section { break-inside: avoid; }
         }
+
+        /* ===== Tooltip ===== */
+        .tooltip-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            vertical-align: middle;
+        }
+
+        .tooltip-icon {
+            width: 20px;
+            height: 20px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(115, 137, 244, 0.12);
+            color: #7389f4;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0;
+            flex-shrink: 0;
+            transition: all 0.2s ease;
+            box-shadow: inset 0 0 0 1px rgba(115, 137, 244, 0.18);
+        }
+
+        .tooltip-icon:hover,
+        .tooltip-wrap.active .tooltip-icon {
+            background: #7389f4;
+            color: #ffffff;
+            box-shadow: 0 6px 16px rgba(115, 137, 244, 0.28);
+            transform: translateY(-1px);
+        }
+
+        .tooltip-icon i {
+            font-size: 12px;
+            line-height: 1;
+            pointer-events: none;
+        }
+
+        .tooltip-box {
+            position: absolute;
+            left: 0;
+            bottom: calc(100% + 10px);
+            width: 320px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            background: rgba(34, 39, 49, 0.94);
+            color: #ffffff;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            white-space: normal;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
+            backdrop-filter: blur(6px);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(6px);
+            transition: all 0.2s ease;
+            z-index: 9999;
+        }
+
+        .tooltip-box::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 16px;
+            border-width: 6px;
+            border-style: solid;
+            border-color: rgba(34, 39, 49, 0.94) transparent transparent transparent;
+        }
+
+        .tooltip-wrap:hover .tooltip-box,
+        .tooltip-wrap.active .tooltip-box {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .tooltip-box code {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.12);
+            font-size: 0.78rem;
+            font-family: Consolas, Monaco, monospace;
+            color: #fff;
+        }
+
+        .tooltip-wrap.tooltip-bottom .tooltip-box {
+            top: calc(100% + 10px);
+            bottom: auto;
+        }
+
+        .tooltip-wrap.tooltip-bottom .tooltip-box::after {
+            top: auto;
+            bottom: 100%;
+            left: 16px;
+            border-width: 6px;
+            border-style: solid;
+            border-color: transparent transparent rgba(34, 39, 49, 0.94) transparent;
+        }
+
+        .stat-card,
+        .report-card,
+        .report-table-card {
+            overflow: visible;
+        }
+
+        @media (max-width: 768px) {
+            .tooltip-box {
+                left: auto;
+                right: 0;
+                width: 250px;
+            }
+
+            .tooltip-box::after {
+                left: auto;
+                right: 16px;
+            }
+        }
+
+
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
@@ -208,7 +341,23 @@
         </div>
     </div>
         <section class="report-section">
-            <h3>감정 및 발화 지표 스코어</h3>
+            <h3>
+                <span class="tooltip-wrap">
+                    감정 및 발화 지표 스코어
+                    <button type="button" class="tooltip-icon" aria-label="감정 및 발화 지표 스코어 설명">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </button>
+                    <span class="tooltip-box">
+                        세션 전체 대화와 발화 신호를 바탕으로 <b>상담 품질, 대화 흐름, 이탈 가능성</b>의 세 가지 핵심 지표를 계산해 보여줍니다.<br><br>
+
+                        상담 품질은 상담사의 반응 적절성, 공감적 대응, 주제 복귀 시도, 진행 안정성을 종합해 평가합니다.<br><br>
+
+                        대화 흐름은 질문과 응답의 연결성, 맥락 유지, 회피성 단답 반복 여부를 기준으로 평가합니다.<br><br>
+
+                        이탈 가능성은 내담자 발화에서 감지된 이탈 신호와 반응 저하 신호를 바탕으로 계산합니다.
+                    </span>
+                </span>
+            </h3>
             <div class="metrics-grid" id="metricsGrid">
                 <div class="metric-card"><div class="metric-label">상담 품질</div><div class="metric-value" id="metricScore">—</div></div>
                 <div class="metric-card"><div class="metric-label">대화 흐름</div><div class="metric-value" id="metricFlow">—</div></div>
@@ -219,14 +368,38 @@
         
 
         <section class="report-section">
-            <h3>AI 분석 요약 및 상담 참고자료
+            <h3>
+                <span class="tooltip-wrap">
+                    AI 분석 요약 및 상담 참고자료
+                    <button type="button" class="tooltip-icon" aria-label="AI 분석 요약 설명">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </button>
+                    <span class="tooltip-box">
+                        세션 전체 대화를 요약 모델에 넣어 생성한 핵심 상담 요약입니다.<br><br>
+                        긴 대화는 여러 구간으로 나누어 요약한 뒤 다시 압축해 최종 요약으로 정리합니다.<br><br>
+                        <b>재분석</b> 버튼을 누르면 저장된 세션 대화를 다시 분석해 요약과 상담 참고 내용을 갱신합니다. 분석 결과를 다시 확인하거나 최신 내용으로 반영할 때 사용할 수 있습니다.
+                    </span>
+                </span>
                 <button id="btnRunAnalysis" onclick="runAnalysis()" style="margin-left:12px;padding:4px 14px;font-size:0.78rem;border-radius:8px;border:1px solid #7389f4;background:#f0f3ff;color:#5c6fd6;cursor:pointer;font-weight:600;">🔄 재분석</button>
             </h3>
+                
+            
             <div class="ai-summary-box" id="aiSummary" style="color:#aab0be;">HCX 분석 완료 후 요약이 표시됩니다.</div>
         </section>
 
         <section class="report-section">
-            <h3>신호 탐지 구간 실제 발화 로그</h3>
+            <h3>
+                <span class="tooltip-wrap">
+                    신호 탐지 구간 실제 발화 로그
+                    <button type="button" class="tooltip-icon" aria-label="신호 탐지 구간 실제 발화 로그 설명">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </button>
+                    <span class="tooltip-box">
+                        alert가 감지된 발화 시점을 기준으로 전후 대화 맥락을 보여주는 근거 로그입니다.<br><br>
+                        어떤 문장 때문에 신호가 잡혔는지 실제 발화 흐름으로 확인할 수 있습니다.
+                    </span>
+                </span>
+            </h3>
             <div class="evidence-table-wrap">
                 <table class="evidence-table" id="evidenceTable">
                     <thead>
@@ -240,7 +413,18 @@
         </section>
 
         <section class="report-section">
-            <h3>고민 주제 분석</h3>
+           <h3>
+                <span class="tooltip-wrap">
+                    고민 주제 분석
+                    <button type="button" class="tooltip-icon" aria-label="고민 주제 분석 설명">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </button>
+                    <span class="tooltip-box">
+                        세션 전체 대화를 먼저 요약한 뒤, AI가 미리 정의된 상담 주제 목록 중에서 가장 적절한 주제를 선택해 분류한 결과입니다.<br><br>
+                        내담자가 신청 시 선택한 주제와 비교해 실제 상담 흐름에서 어떤 주제가 중심이었는지 확인할 수 있습니다.
+                    </span>
+                </span>
+            </h3>
             <div class="topic-compare-wrap">
                 <div class="topic-compare-box">
                     <div class="topic-compare-label">내담자가 선택한 고민 주제</div>
@@ -258,14 +442,38 @@
         </section>
 
         <section class="report-section">
-            <h3>전체 상담 대화 로그</h3>
+            <h3>
+                <span class="tooltip-wrap">
+                    전체 상담 대화 로그
+                    <button type="button" class="tooltip-icon" aria-label="전체 상담 대화 로그 설명">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </button>
+                    <span class="tooltip-box">
+                        세션에서 오간 전체 상담 대화를 시간 순서대로 보여주는 영역입니다.<br><br>
+                        상담 흐름과 실제 발화 내용을 전체 맥락에서 확인할 수 있습니다.
+                    </span>
+                </span>
+            </h3>
             <div class="full-chat-wrap" id="fullChatWrap">
                 <div class="chat-empty">대화 내역을 불러오는 중...</div>
             </div>
         </section>
 
         <section class="report-section">
-            <h3><span class="required-asterisk" aria-hidden="true">*</span>상담사 의견<span class="required-label">필수기재</span></h3>
+            <h3>
+                <span class="required-asterisk" aria-hidden="true">*</span>
+                <span class="tooltip-wrap">
+                    상담사 의견
+                    <button type="button" class="tooltip-icon" aria-label="상담사 의견 설명">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </button>
+                    <span class="tooltip-box">
+                        상담 종료 후 상담사가 직접 작성한 의견과 메모를 보여주는 영역입니다.<br><br>
+                        AI 분석 결과와 함께 참고해 세션에 대한 최종 판단과 후속 대응 방향을 확인할 수 있습니다.
+                    </span>
+                </span>
+                <span class="required-label">필수기재</span>
+            </h3>
             <textarea
                 class="counselor-note-input"
                 id="counselorNote"
@@ -422,20 +630,27 @@
                         evidenceBody.innerHTML = `<tr><td colspan="3" class="empty-msg">신호 감지 구간 전후 발화 내역이 없습니다.</td></tr>`;
                     } else {
                         evidenceBody.innerHTML = evidenceMsgs.map(m => {
-                            // 해당 메시지와 가장 가까운 alert 찾아서 신호 유형 표시
-                            const mt      = new Date(m.at).getTime();
-                            const nearest = allAlerts.reduce((prev, cur) =>
-                                Math.abs(new Date(cur.at).getTime() - mt) < Math.abs(new Date(prev.at).getTime() - mt) ? cur : prev
-                            );
-                            const withinAlert = Math.abs(new Date(nearest.at).getTime() - mt) <= WINDOW_MS;
-                            const typeBadge   = withinAlert && nearest.type
-                                ? `<span style="font-size:0.68rem;padding:1px 5px;border-radius:3px;background:#fff0f0;color:#e05252;margin-left:6px;">${nearest.type}</span>`
-                                : '';
+                            const isClient = m.speaker === 'CLIENT';
+
+                            // 내담자 발화일 때만 가장 가까운 alert를 찾아 배지 표시
+                            let typeBadge = '';
+                            if (isClient) {
+                                const mt = new Date(m.at).getTime();
+                                const nearest = allAlerts.reduce((prev, cur) =>
+                                    Math.abs(new Date(cur.at).getTime() - mt) < Math.abs(new Date(prev.at).getTime() - mt) ? cur : prev
+                                );
+                                const withinAlert = Math.abs(new Date(nearest.at).getTime() - mt) <= WINDOW_MS;
+
+                                typeBadge = withinAlert && nearest.type
+                                    ? `<span style="font-size:0.68rem;padding:1px 5px;border-radius:3px;background:#fff0f0;color:#e05252;margin-left:6px;">${nearest.type}</span>`
+                                    : '';
+                            }
+
                             return `
                             <tr>
-                                <td class="col-time">${new Date(m.at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'})}</td>
-                                <td class="col-role">${m.speaker === 'CLIENT' ? '내담자' : '상담사'}</td>
-                                <td class="col-utterance">${m.text}${typeBadge}</td>
+                                <td class="col-time">${new Date(m.at).toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' })}</td>
+                                <td class="col-role">${isClient ? '내담자' : '상담사'}</td>
+                                <td class="col-utterance">${m.text || ''}${typeBadge}</td>
                             </tr>`;
                         }).join('');
                     }
@@ -593,6 +808,40 @@
         }
 
         window.addEventListener('DOMContentLoaded', fetchReportData);
+
+        function bindTooltips(root = document) {
+            root.querySelectorAll('.tooltip-icon').forEach(btn => {
+                if (btn.dataset.tooltipBound === '1') return;
+                btn.dataset.tooltipBound = '1';
+
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+
+                    const wrap = this.closest('.tooltip-wrap');
+                    const isOpen = wrap.classList.contains('active');
+
+                    document.querySelectorAll('.tooltip-wrap.active').forEach(el => {
+                        el.classList.remove('active');
+                    });
+
+                    if (!isOpen) {
+                        wrap.classList.add('active');
+                    }
+                });
+            });
+        }
+
+        document.addEventListener('click', function () {
+            document.querySelectorAll('.tooltip-wrap.active').forEach(el => {
+                el.classList.remove('active');
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            bindTooltips();
+        });
+
+
     </script>
 </body>
 </html>

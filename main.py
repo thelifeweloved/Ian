@@ -769,64 +769,128 @@ def save_quality(sess_id: int, payload: QualityCreate, db: Session = Depends(get
     except Exception as e:
         db.rollback(); raise HTTPException(status_code=400, detail=str(e))
 
+
+def finalize_session_close(
+    db: Session,
+    sess_id: int,
+    end_reason: str,
+    sat: Optional[int] = None,
+    sat_note: Optional[str] = None,
+):
+    db.execute(text("""
+        UPDATE sess
+        SET end_at = NOW(),
+            progress = 'CLOSED',
+            end_reason = :end_reason,
+            sat = :sat,
+            sat_note = :sat_note
+        WHERE id = :sid
+    """), {
+        "sid": sess_id,
+        "end_reason": end_reason,
+        "sat": sat,
+        "sat_note": sat_note
+    })
+
+    # 예약 상태 완료 처리 추가
+    appt_row = db.execute(text("""
+        SELECT appt_id FROM sess WHERE id = :sid
+    """), {"sid": sess_id}).mappings().first()
+
+    if appt_row and appt_row["appt_id"]:
+        db.execute(text("""
+            UPDATE appt
+            SET status = 'COMPLETED'
+            WHERE id = :appt_id
+        """), {"appt_id": appt_row["appt_id"]})
+
+    client_row = db.execute(text("""
+        SELECT client_id FROM sess WHERE id = :sid
+    """), {"sid": sess_id}).mappings().first()
+
+    if client_row:
+        cid = client_row["client_id"]
+
+        stats = db.execute(text("""
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN end_reason = 'DROPOUT' THEN 1 ELSE 0 END) AS dropout_cnt,
+                SUM(CASE WHEN sat = 0 THEN 1 ELSE 0 END) AS unsat_cnt
+            FROM sess
+            WHERE client_id = :cid AND progress = 'CLOSED'
+        """), {"cid": cid}).mappings().first()
+
+        total = int(stats["total"] or 0)
+        dropout_rate = (int(stats["dropout_cnt"] or 0) / total) if total > 0 else 0
+        unsat_cnt = int(stats["unsat_cnt"] or 0)
+
+        new_status = "안정"
+        if dropout_rate >= 0.5:
+            new_status = "집중 관리"
+        elif dropout_rate >= 0.3 or unsat_cnt > 0:
+            new_status = "주의"
+
+        db.execute(text("""
+            UPDATE client SET status = :status WHERE id = :cid
+        """), {"status": new_status, "cid": cid})
+
+    try:
+        _flush_face_buffer(db, sess_id)
+    except Exception as e:
+        print(f"[finalize] face flush 실패: {e}")
+
+    db.commit()
+
 @app.post("/sessions/{sess_id}/close")
-async def close_session(sess_id: int, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def close_session(
+    sess_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     try:
         raw = await request.body()
         body_json = json.loads(raw) if raw else {}
     except Exception:
         body_json = {}
-    
+
     payload = SessionCloseRequest(
-        end_reason = body_json.get("end_reason", "NORMAL"),
-        sat        = body_json.get("sat"),
-        sat_note   = body_json.get("sat_note"),
+        end_reason=body_json.get("end_reason", "NORMAL"),
+        sat=body_json.get("sat"),
+        sat_note=body_json.get("sat_note"),
     )
-    
+
     try:
-        db.execute(text("""
-            UPDATE sess SET end_at = NOW(), progress = 'CLOSED', 
-            end_reason = :end_reason, sat = :sat, sat_note = :sat_note
-            WHERE id = :sid
-        """), {
-            "sid":        sess_id,
-            "end_reason": payload.end_reason,
-            "sat":        payload.sat,
-            "sat_note":   payload.sat_note
-        })
+        finalize_session_close(
+            db=db,
+            sess_id=sess_id,
+            end_reason=payload.end_reason,
+            sat=payload.sat,
+            sat_note=payload.sat_note,
+        )
 
-        client_row = db.execute(text(
-            "SELECT client_id FROM sess WHERE id = :sid"
-        ), {"sid": sess_id}).mappings().first()
+        def run_ai_background(sid: int):
+            db_gen = get_db()
+            bg_db = next(db_gen)
+            try:
+                clova = ClovaXClient(
+                    api_key=os.getenv("CLOVA_API_KEY", ""),
+                    endpoint_id=os.getenv("CLOVA_ENDPOINT_ID", "")
+                )
+                run_core_features(clova, sess_id=sid, db=bg_db)
+                bg_db.commit()
+            except Exception as e_run:
+                bg_db.rollback()
+                print(f"[runner 백그라운드 실패] {e_run}")
+            finally:
+                bg_db.close()
 
-        if client_row:
-            cid = client_row["client_id"]
-            stats = db.execute(text("""
-                SELECT
-                    COUNT(*) AS total,
-                    SUM(CASE WHEN end_reason = 'DROPOUT' THEN 1 ELSE 0 END) AS dropout_cnt,
-                    SUM(CASE WHEN sat = 0 THEN 1 ELSE 0 END) AS unsat_cnt
-                FROM sess
-                WHERE client_id = :cid AND progress = 'CLOSED'
-            """), {"cid": cid}).mappings().first()
+        background_tasks.add_task(run_ai_background, sess_id)
+        return {"status": "closed", "sess_id": sess_id}
 
-            total = int(stats["total"] or 0)
-            dropout_rate = (int(stats["dropout_cnt"] or 0) / total) if total > 0 else 0
-            unsat_cnt = int(stats["unsat_cnt"] or 0)
-
-            new_status = "안정"
-            if dropout_rate >= 0.5: new_status = "개선필요"
-            elif dropout_rate >= 0.3 or unsat_cnt > 0: new_status = "주의"
-
-            db.execute(text("UPDATE client SET status = :status WHERE id = :cid"), {"status": new_status, "cid": cid})
-
-        # face 로그는 세션 종료 시 일괄 저장
-        try:
-            _flush_face_buffer(db, sess_id)
-        except Exception:
-            pass
-
-        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
 
         # ✅ 수정된 백그라운드 작업 (들여쓰기 및 저장 로직 통합 완료)
         def run_ai_background(sid: int):
@@ -857,6 +921,7 @@ async def close_session(sess_id: int, request: Request, background_tasks: Backgr
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+    
 
 # ---------------------------------------------------------
 # WebSocket & Heartbeat (이안님의 고유 기능 유지)
@@ -987,17 +1052,22 @@ def heartbeat_check(sess_id: int, db: Session = Depends(get_db)):
     last = _heartbeat_store.get(sess_id)
     if last is None:
         return {"alive": None}
+
     elapsed = _time.time() - last
 
     if elapsed > 300:
         try:
-            db.execute(text("""
-                UPDATE sess SET end_at = NOW(), progress = 'CLOSED', end_reason = 'DROPOUT'
-                WHERE id = :sid AND progress = 'ACTIVE'
-            """), {"sid": sess_id})
-            db.commit()
+            finalize_session_close(
+                db=db,
+                sess_id=sess_id,
+                end_reason="DROPOUT",
+                sat=None,
+                sat_note=None,
+            )
+
             _heartbeat_store.pop(sess_id, None)
             return {"alive": False, "auto_closed": True, "elapsed": round(elapsed)}
+
         except Exception as e:
             db.rollback()
             print(f"Heartbeat 5분 타임아웃 처리 에러: {e}")

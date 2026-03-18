@@ -1499,6 +1499,132 @@
         .session-score-popup .score-bar.emotion {
             background: #a371f7;
         }
+
+        /* ===== Tooltip ===== */
+        .tooltip-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            vertical-align: middle;
+        }
+
+        .tooltip-icon {
+            width: 20px;
+            height: 20px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(115, 137, 244, 0.12);
+            color: #7389f4;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0;
+            flex-shrink: 0;
+            transition: all 0.2s ease;
+            box-shadow: inset 0 0 0 1px rgba(115, 137, 244, 0.18);
+        }
+
+        .tooltip-icon:hover,
+        .tooltip-wrap.active .tooltip-icon {
+            background: #7389f4;
+            color: #ffffff;
+            box-shadow: 0 6px 16px rgba(115, 137, 244, 0.28);
+            transform: translateY(-1px);
+        }
+
+        .tooltip-icon i {
+            font-size: 12px;
+            line-height: 1;
+            pointer-events: none;
+        }
+
+        .tooltip-box {
+            position: absolute;
+            left: 0;
+            bottom: calc(100% + 10px);
+            width: 320px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            background: rgba(34, 39, 49, 0.94);
+            color: #ffffff;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            white-space: normal;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
+            backdrop-filter: blur(6px);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(6px);
+            transition: all 0.2s ease;
+            z-index: 9999;
+        }
+
+        .tooltip-box::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 16px;
+            border-width: 6px;
+            border-style: solid;
+            border-color: rgba(34, 39, 49, 0.94) transparent transparent transparent;
+        }
+
+        .tooltip-wrap:hover .tooltip-box,
+        .tooltip-wrap.active .tooltip-box {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .tooltip-box code {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.12);
+            font-size: 0.78rem;
+            font-family: Consolas, Monaco, monospace;
+            color: #fff;
+        }
+
+        .tooltip-wrap.tooltip-bottom .tooltip-box {
+            top: calc(100% + 10px);
+            bottom: auto;
+        }
+
+        .tooltip-wrap.tooltip-bottom .tooltip-box::after {
+            top: auto;
+            bottom: 100%;
+            left: 16px;
+            border-width: 6px;
+            border-style: solid;
+            border-color: transparent transparent rgba(34, 39, 49, 0.94) transparent;
+        }
+
+        .stat-card,
+        .report-card,
+        .report-table-card {
+            overflow: visible;
+        }
+
+        @media (max-width: 768px) {
+            .tooltip-box {
+                left: auto;
+                right: 0;
+                width: 250px;
+            }
+
+            .tooltip-box::after {
+                left: auto;
+                right: 16px;
+            }
+        }
+
     </style>
 </head>
 
@@ -1553,30 +1679,66 @@
 
         <!-- ① KPI 카드 3개 -->
         <div class="top-stats" id="report-kpi" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
-            <div class="stat-card stat-churn">
-                <div class="stat-label stat-label-with-alert">
-                    <i class="fa-solid fa-comment-medical kpi-alert-icon" aria-hidden="true"></i>
-                    진행 중 상담
+            <div class="stat-card">
+                <div class="stat-label">
+                    <span class="tooltip-wrap tooltip-bottom">
+                        진행 중 상담
+                        <button type="button" class="tooltip-icon" aria-label="진행 중 상담 설명">
+                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        </button>
+                        <span class="tooltip-box">
+                            현재 시점 기준으로 진행 중 상태로 집계된 상담 건수를 보여주는 지표입니다.
+                        </span>
+                    </span>
                 </div>
-                <div class="stat-value" id="kpi-sessions">0</div>
-                <div class="stat-label stat-label-sub">ACTIVE</div>
+                <div class="stat-value" id="kpi-live-sessions">0</div>
             </div>
-            <div class="stat-card stat-quality">
-                <div class="stat-label">평균 상담 품질</div>
-                <div class="stat-value" id="kpi-quality">0</div>
-                <div class="stat-label stat-label-sub">최근 15개 세션 평균</div>
+            <div class="stat-card">
+                <div class="stat-label">
+                    <span class="tooltip-wrap tooltip-bottom">
+                        평균 상담 품질
+                        <button type="button" class="tooltip-icon" aria-label="평균 상담 품질 설명">
+                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        </button>
+                        <span class="tooltip-box">
+                            최근 15개 상담 세션의 상담 품질 평균 점수를 보여주는 지표입니다.<br><br>
+                            각 세션의 상담 품질 점수는 상담사의 반응 적절성, 공감적 대응, 주제 복귀 시도, 탐색 전략, 진행 안정성을 종합해 계산합니다.
+                        </span>
+                    </span>
+                </div>
+                <div class="stat-value" id="kpi-quality-avg">0</div>
             </div>
             <div class="stat-card stat-unassigned">
-                <div class="stat-label">주의·집중 관리 내담자</div>
+                <div class="stat-label">
+                    <span class="tooltip-wrap tooltip-bottom">
+                        주의·집중 관리 내담자
+                        <button type="button" class="tooltip-icon" aria-label="주의·집중 관리 내담자 설명">
+                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        </button>
+                        <span class="tooltip-box">
+                            주의 및 집중 관리 상태인 내담자 수를 합산한 지표입니다.<br><br>
+                            내담자 상태값을 기준으로 집계합니다.
+                        </span>
+                    </span>
+                </div>
                 <div class="stat-value" id="kpi-risk-clients">0</div>
-                <div class="stat-label stat-label-sub">주의 + 집중 관리</div>
             </div>
         </div>
 
         <!-- ② 우선 검토 내담자 목록 -->
         <section class="report-section" style="margin-top:24px;">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-                <h3 class="section-title">우선 검토 내담자</h3>
+                <h3 class="section-title">
+                    <span class="tooltip-wrap tooltip-bottom">
+                        우선 검토 내담자
+                        <button type="button" class="tooltip-icon" aria-label="우선 검토 내담자 설명">
+                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        </button>
+                        <span class="tooltip-box">
+                            내담자별 최근 세션 데이터를 묶어 보여주는 목록입니다. 내담자 등급은 <b>집중 관리 → 주의 → 안정</b> 순으로 먼저 정렬하고, 같은 등급 안에서는 세션별 alert 중 <b>최고 이탈 신호 점수</b>가 높은 순으로 우선 표시합니다.
+                        </span>
+                    </span>
+                </h3>
                 <span style="font-size:0.8rem; color:#aab0be;">신호 강도 높은 순 · 집중 관리 내담자 우선</span>
             </div>
             <div class="card report-table-card" style="padding:0; overflow:hidden;">
@@ -1602,7 +1764,18 @@
             <!-- 차트 행 1: 품질 추이 + 내담자 등급 분포 -->
             <div class="report-two-col report-two-col-aligned" style="margin-bottom:20px;">
                 <div class="report-col-block">
-                    <h3 class="section-title" style="margin-bottom:10px;">일별 상담 품질 추이</h3>
+                    <h3 class="section-title" style="margin-bottom:10px;">
+                        <span class="tooltip-wrap">
+                            일별 상담 품질 추이
+                            <button type="button" class="tooltip-icon" aria-label="일별 상담 품질 추이 설명">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                            </button>
+                            <span class="tooltip-box">
+                                날짜별 상담 세션의 품질 점수 변화를 보여주는 그래프입니다.<br><br>
+                                대화 흐름 점수와 상담 품질 점수를 함께 보여주며 최근 세션의 변화를 확인할 수 있습니다.
+                            </span>
+                        </span>
+                    </h3>
                     <div class="card report-card">
                         <div class="quality-flow-chart-wrap">
                             <canvas id="chart-quality-flow-dropout" height="200"></canvas>
@@ -1610,7 +1783,24 @@
                     </div>
                 </div>
                 <div class="report-col-block">
-                    <h3 class="section-title" style="margin-bottom:10px;">내담자 등급 분포</h3>
+                    <h3 class="section-title" style="margin-bottom:10px;">
+                        <span class="tooltip-wrap tooltip-bottom">
+                            내담자 등급 분포
+                            <button type="button" class="tooltip-icon" aria-label="내담자 등급 분포 설명">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                            </button>
+                            <span class="tooltip-box">
+                                전체 내담자를 안정 / 주의 / 집중 관리 상태로 나누어 현재 분포를 보여주는 차트입니다. 이 등급은 내담자 상태값을 기준으로 집계됩니다.<br><br>
+                                <b>등급 판정 기준</b><br>
+                                dropout_rate : 상담 중 감지된 이탈 신호 발화 비율<br>
+                                unsat_cnt : 불만 또는 부정 반응 발화 수<br><br>
+                                <b>등급 설명</b><br>
+                                안정 : 이탈 신호가 낮고 불만 발화가 없는 상태<br>
+                                주의 : 이탈 신호 비율이 0.3 이상이거나 불만 발화가 있는 경우<br>
+                                집중 관리 : 이탈 신호 비율이 0.5 이상인 경우
+                            </span>
+                        </span>
+                    </h3>
                     <div class="card report-card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
                         <div style="width:180px;height:180px;">
                             <canvas id="chart-client-grade"></canvas>
@@ -1632,7 +1822,17 @@
 
             <!-- 차트 행 2: 고민 유형 현황 (전체 너비) -->
             <div style="margin-bottom:20px;">
-                <h3 class="section-title" style="margin-bottom:10px;">고민 유형 현황 <span style="font-size:0.75rem;font-weight:400;color:#aab0be;margin-left:6px;">내담자가 직접 선택한 고민 주제</span></h3>
+                <h3 class="section-title" style="margin-bottom:10px;">
+                    <span class="tooltip-wrap">
+                        고민 유형 현황
+                        <button type="button" class="tooltip-icon" aria-label="고민 유형 현황 설명">
+                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        </button>
+                        <span class="tooltip-box">
+                            상담 신청 또는 분석 결과를 기준으로, 어떤 고민 유형이 많이 나타나는지 분포를 보여주는 현황입니다.
+                        </span>
+                    </span>
+                </h3>
                 <div class="card report-card">
                     <div id="chart-topic-dist"></div>
                 </div>
@@ -1641,7 +1841,17 @@
             <!-- 예약 현황 패널 -->
             <div>
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                    <h3 class="section-title" id="appt-panel-section">예약 현황</h3>
+                    <h3 class="section-title">
+                        <span class="tooltip-wrap">
+                            예약 현황
+                            <button type="button" class="tooltip-icon" aria-label="예약 현황 설명">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                            </button>
+                            <span class="tooltip-box">
+                                예정된 상담 예약 건수와 현재 예약 상태를 요약해 보여주는 영역입니다.
+                            </span>
+                        </span>
+                    </h3>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
                         <input type="text" id="apptPanelSearch" placeholder="내담자명 검색" style="padding:5px 10px; border:1px solid #dde0e7; border-radius:6px; font-size:0.82rem; outline:none; width:140px;">
                         <select id="apptPanelStatusFilter" style="padding:5px 10px; border:1px solid #dde0e7; border-radius:6px; font-size:0.82rem; background:#fff; outline:none; cursor:pointer;">
@@ -2174,23 +2384,24 @@
 
         function renderReportSections() {
             const el = (id) => document.getElementById(id);
-            if (!el('kpi-sessions')) return;
+            if (!el('kpi-live-sessions')) return;
 
-            // ① KPI 카드 업데이트 (기획 의도 기반)
             const activeSessions = STATE.sessions.filter(s => s.progress === 'ACTIVE');
-            el('kpi-sessions').textContent = activeSessions.length;
+            el('kpi-live-sessions').textContent = activeSessions.length;
 
             const avgScore = STATE.quality.length
                 ? (STATE.quality.reduce((s, q) => s + q.score, 0) / STATE.quality.length).toFixed(1)
                 : '0';
-            el('kpi-quality').textContent = avgScore;
+            el('kpi-quality-avg').textContent = avgScore;
 
-            // 주의+집중 관리 내담자 수 (client_grade 통계에서 합산)
             const riskClients = STATE.clientGrade
                 .filter(g => g.client_grade === '주의' || g.client_grade === '집중 관리')
                 .reduce((sum, g) => sum + Number(g.total || 0), 0);
             el('kpi-risk-clients').textContent = riskClients;
 
+            renderPrioritySessions();
+            renderUnresolvedSessions();
+            filterAlertList();
             // ② 우선 검토 내담자 렌더
             renderPrioritySessions();
 
@@ -2682,9 +2893,42 @@
                 });
             }
 
-            // 데이터 초기 로딩
-            fetchDashboardData();
+            
         });
+
+
+        function bindTooltips(root = document) {
+            root.querySelectorAll('.tooltip-icon').forEach(btn => {
+                if (btn.dataset.tooltipBound === '1') return;
+                btn.dataset.tooltipBound = '1';
+
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+
+                    const wrap = this.closest('.tooltip-wrap');
+                    const isOpen = wrap.classList.contains('active');
+
+                    document.querySelectorAll('.tooltip-wrap.active').forEach(el => {
+                        el.classList.remove('active');
+                    });
+
+                    if (!isOpen) {
+                        wrap.classList.add('active');
+                    }
+                });
+            });
+        }
+
+        document.addEventListener('click', function () {
+            document.querySelectorAll('.tooltip-wrap.active').forEach(el => {
+                el.classList.remove('active');
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            bindTooltips();
+        });
+
     </script>
 </body>
 

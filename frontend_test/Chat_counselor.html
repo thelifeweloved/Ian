@@ -838,11 +838,16 @@
 
             // ── WebRTC 수신 (영상) ──
             _rtcPc = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
             });
+
+            _rtcPc.addTransceiver('video', { direction: 'recvonly' });
 
             _rtcPc.ontrack = (e) => {
                 console.log('[counselor] ontrack fired', e.streams);
+                console.log('[counselor] video stream tracks =', e.streams[0]?.getTracks?.());
 
                 const videoEl = document.getElementById('clientVideo');
                 const placeholder = document.getElementById('videoPlaceholder');
@@ -852,6 +857,8 @@
                 videoEl.style.display = 'block';
                 placeholder.style.display = 'none';
                 badge.style.display = 'inline-flex';
+
+                console.log('[counselor] video readyState before play =', videoEl.readyState);
 
                 videoEl.play().catch(err => {
                     console.warn('[counselor] video play failed', err);
@@ -866,6 +873,14 @@
                 console.log('[counselor] pc iceConnectionState =', _rtcPc.iceConnectionState);
             };
 
+            _rtcPc.onicegatheringstatechange = () => {
+                console.log('[counselor] pc iceGatheringState =', _rtcPc.iceGatheringState);
+            };
+
+            _rtcPc.onsignalingstatechange = () => {
+                console.log('[counselor] pc signalingState =', _rtcPc.signalingState);
+            };
+
             _signalWs = new WebSocket(`${protocol}://${wsHost}/ws/signal/${window._mwSessId}/counselor`);
             const signalWs = _signalWs;
 
@@ -878,23 +893,33 @@
 
                 const msg = JSON.parse(e.data);
 
+                if (!_rtcPc) {
+                    console.warn('[counselor] rtc pc is null, ignore signal message');
+                    return;
+                }
+
                 if (msg.type === 'offer') {
                     console.log('[counselor] received offer');
+                    console.log('[counselor] signalingState before offer =', _rtcPc.signalingState);
 
-                    await _rtcPc.setRemoteDescription(new RTCSessionDescription(msg));
+                    try {
+                        await _rtcPc.setRemoteDescription(new RTCSessionDescription(msg));
 
-                    const answer = await _rtcPc.createAnswer();
-                    await _rtcPc.setLocalDescription(answer);
+                        const answer = await _rtcPc.createAnswer();
+                        await _rtcPc.setLocalDescription(answer);
 
-                    if (signalWs.readyState === WebSocket.OPEN) {
-                        signalWs.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
-                        console.log('[counselor] sent answer');
-                    } else {
-                        console.log('[counselor] signal ws not open when sending answer');
+                        if (signalWs.readyState === WebSocket.OPEN) {
+                            signalWs.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+                            console.log('[counselor] sent answer');
+                        } else {
+                            console.log('[counselor] signal ws not open when sending answer');
+                        }
+                    } catch (err) {
+                        console.error('[counselor] offer handling error', err);
                     }
 
                 } else if (msg.type === 'candidate' && msg.candidate) {
-                    console.log('[counselor] received candidate');
+                    console.log('[counselor] received candidate', msg.candidate?.candidate || msg.candidate);
                     try {
                         await _rtcPc.addIceCandidate(new RTCIceCandidate(msg.candidate));
                     } catch (err) {
@@ -913,7 +938,7 @@
 
             _rtcPc.onicecandidate = (e) => {
                 if (e.candidate) {
-                    console.log('[counselor] send candidate');
+                    console.log('[counselor] send candidate', e.candidate.candidate);
                     if (signalWs.readyState === WebSocket.OPEN) {
                         signalWs.send(JSON.stringify({
                             type: 'candidate',
@@ -922,6 +947,8 @@
                     } else {
                         console.log('[counselor] signal ws not open when sending candidate');
                     }
+                } else {
+                    console.log('[counselor] ice candidate gathering complete');
                 }
             };
 

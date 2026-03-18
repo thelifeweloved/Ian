@@ -180,11 +180,12 @@
         try {
             const apptRes  = await fetch(`${API_BASE_URL}/appointments?client_id=${clientId}`);
             const apptData = await apptRes.json();
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const upcoming = (apptData.items || []).find(a =>
-                a.status === 'CONFIRMED' && new Date(a.at) >= today
-            );
+            const now = new Date();
+
+            const upcoming = (apptData.items || [])
+                .filter(a => a.status === 'CONFIRMED' && new Date(a.at) > now)
+                .sort((a, b) => new Date(a.at) - new Date(b.at))[0];
+
             if (upcoming) {
                 showApptReady(upcoming);
             } else {
@@ -432,11 +433,12 @@
 
             const apptRes  = await fetch(`${API_BASE_URL}/appointments?client_id=${cid}`);
             const apptData = await apptRes.json();
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const upcoming = (apptData.items || []).find(a =>
-                a.status === 'CONFIRMED' && new Date(a.at) >= today
-            );
+            const now = new Date();
+
+            const upcoming = (apptData.items || [])
+                .filter(a => a.status === 'CONFIRMED' && new Date(a.at) > now)
+                .sort((a, b) => new Date(a.at) - new Date(b.at))[0];
+
             if (upcoming) {
                 showApptReady(upcoming);
             } else {

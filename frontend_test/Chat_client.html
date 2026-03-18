@@ -677,6 +677,16 @@
                 return;
             }
 
+            // 기존 연결 정리
+            if (_pc) {
+                try { _pc.close(); } catch (e) {}
+                _pc = null;
+            }
+            if (_signalWs) {
+                try { _signalWs.close(); } catch (e) {}
+                _signalWs = null;
+            }
+
             const tracks = stream.getTracks();
             console.log('[client] startWebRTC begin | tracks =', tracks);
 
@@ -686,7 +696,15 @@
             }
 
             _pc = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                    // TURN 서버 사용 시 아래 추가
+                    // {
+                    //     urls: 'turn:YOUR_TURN_HOST:3478',
+                    //     username: 'YOUR_TURN_USERNAME',
+                    //     credential: 'YOUR_TURN_PASSWORD'
+                    // }
+                ]
             });
 
             tracks.forEach(t => {
@@ -702,13 +720,23 @@
                 console.log('[client] pc iceConnectionState =', _pc.iceConnectionState);
             };
 
+            _pc.onicegatheringstatechange = () => {
+                console.log('[client] pc iceGatheringState =', _pc.iceGatheringState);
+            };
+
+            _pc.onsignalingstatechange = () => {
+                console.log('[client] pc signalingState =', _pc.signalingState);
+            };
+
             _pc.onicecandidate = (e) => {
                 if (e.candidate && _signalWs && _signalWs.readyState === WebSocket.OPEN) {
-                    console.log('[client] sending candidate');
+                    console.log('[client] sending candidate', e.candidate.candidate);
                     _signalWs.send(JSON.stringify({
                         type: 'candidate',
                         candidate: e.candidate
                     }));
+                } else if (!e.candidate) {
+                    console.log('[client] ice candidate gathering complete');
                 }
             };
 
@@ -718,24 +746,29 @@
                     return;
                 }
 
-                const offer = await _pc.createOffer();
-                await _pc.setLocalDescription(offer);
+                try {
+                    const offer = await _pc.createOffer();
+                    await _pc.setLocalDescription(offer);
 
-                if (ws.readyState !== WebSocket.OPEN) {
-                    console.log('[client] cannot send offer: ws closed before send', ws.readyState);
-                    return;
+                    if (ws.readyState !== WebSocket.OPEN) {
+                        console.log('[client] cannot send offer: ws closed before send', ws.readyState);
+                        return;
+                    }
+
+                    console.log('[client] sending offer');
+                    ws.send(JSON.stringify({
+                        type: 'offer',
+                        sdp: offer.sdp
+                    }));
+                } catch (err) {
+                    console.error('[client] createOffer/setLocalDescription error', err);
                 }
-
-                console.log('[client] sending offer');
-                ws.send(JSON.stringify({
-                    type: 'offer',
-                    sdp: offer.sdp
-                }));
             });
         }
+
         function stopWebRTC() {
             if (_pc) {
-                _pc.close();
+                try { _pc.close(); } catch (_) {}
                 _pc = null;
             }
             if (_signalWs) {
@@ -746,23 +779,37 @@
 
         // ── 영상 시작/종료 ──
         function onVideoStart(stream) {
+            // 기존 세션/소켓 정리 후 재시작
+            stopWebRTC();
+            closeFaceWs();
+
             document.getElementById('videoActiveBar').style.display = 'flex';
             btnVideo.classList.add('on');
             btnVideo.style.color = '#E5C76B';
+
             // WebRTC: 영상 P2P 전송
             startWebRTC(stream);
+
             // DeepFace: 분석용 캔버스 캡처 (별도)
             openFaceWs();
+
             _rafRunning = true;
             _rafCanvas = document.createElement('canvas');
-            _rafCanvas.width = 320; _rafCanvas.height = 240;
+            _rafCanvas.width = 320;
+            _rafCanvas.height = 240;
             _rafCtx = _rafCanvas.getContext('2d');
+
+            if (analysisTimer) {
+                clearInterval(analysisTimer);
+                analysisTimer = null;
+            }
             analysisTimer = setInterval(captureAndSend, 1000); // 분석은 1초마다
         }
 
         function stopVideo() {
             if (localVideo.srcObject) localVideo.srcObject.getTracks().forEach(t => t.stop());
-            localVideo.srcObject = null; localVideo.src = '';
+            localVideo.srcObject = null;
+            localVideo.src = '';
             localVideo.style.cssText = 'display:none;position:absolute;width:0;height:0;';
             document.getElementById('videoActiveBar').style.display = 'none';
             btnVideo.classList.remove('on');
@@ -851,7 +898,7 @@
             await closeSession(_selectedSat);
         });
 
-async function closeSession(satScore, endReason = 'NORMAL') {
+        async function closeSession(satScore, endReason = 'NORMAL') {
             const baseUrl = API_BASE_URL;
             const satNote = (document.getElementById('thankYouOneLine')?.value || '').trim();
             
@@ -876,14 +923,29 @@ async function closeSession(satScore, endReason = 'NORMAL') {
                 // 네트워크 오류 등이 발생해도 일단 페이지는 이동시킵니다.
             }
 
-            // 3. 상태 업데이트 및 타이머 정리
-            _sessionClosed = true;
-            if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
-            
-            document.getElementById('endSessionModal').classList.remove('show');
+        // 3. 상태 업데이트 및 타이머 정리
+        _sessionClosed = true;
+        if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
 
-            // 4. [수정] 이동 경로를 Landing.html로 명확히 지정 (404 방지)
-            location.href = 'Landing.html'; 
+        document.getElementById('endSessionModal').classList.remove('show');
+
+        // 4. 브라우저 저장소 정리
+        sessionStorage.clear();
+
+        localStorage.removeItem('client_id');
+        localStorage.removeItem('client_name');
+        localStorage.removeItem('client_email');
+        localStorage.removeItem('counselor_id');
+
+        localStorage.removeItem('counselor_email');
+        localStorage.removeItem('counselor_name');
+        localStorage.removeItem('mindway-sidebar-collapsed');
+
+        const oneLineEl = document.getElementById('thankYouOneLine');
+        if (oneLineEl) oneLineEl.value = '';
+
+        // 5. 이동
+        location.href = 'Landing.html';
         }
 
         // ── 창 강제 종료 감지: Heartbeat 방식 ──
@@ -1093,6 +1155,32 @@ async function closeSession(satScore, endReason = 'NORMAL') {
             }
 
         });
+
+
+        function handleLogout() {
+            _sessionClosed = true;
+
+            if (_heartbeatTimer) {
+                clearInterval(_heartbeatTimer);
+                _heartbeatTimer = null;
+            }
+
+            try { stopVideo(); } catch (e) {}
+            try { stopWebRTC(); } catch (e) {}
+            try { closeFaceWs(); } catch (e) {}
+
+            sessionStorage.removeItem('mw_refreshing');
+            sessionStorage.removeItem('mw_sess_id');
+            sessionStorage.setItem('manual_logout', '1');
+            sessionStorage.clear();
+
+            localStorage.removeItem('client_id');
+            localStorage.removeItem('client_name');
+            localStorage.removeItem('client_email');
+            localStorage.removeItem('counselor_id');
+
+            location.href = 'Landing.html';
+        }
     </script>
 </body>
 </html>

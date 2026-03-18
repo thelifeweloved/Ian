@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS client (
     pwd        VARCHAR(255) NOT NULL COMMENT '비밀번호(암호화 저장)',
     code       VARCHAR(30) NOT NULL COMMENT '내담자 고유 코드',
     name       VARCHAR(50) NOT NULL,
-    status     ENUM('안정', '주의', '개선필요') NOT NULL DEFAULT '안정' COMMENT '상태 등급',
+    status     ENUM('안정', '주의', '집중 관리') NOT NULL DEFAULT '안정' COMMENT '상태 등급',
     phone      VARCHAR(20) NOT NULL,
     active     TINYINT(1) NOT NULL DEFAULT 1 COMMENT '계정 활성화 여부(1=활성, 0=비활성)',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
