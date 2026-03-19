@@ -7,6 +7,7 @@ starlette==0.50.0
 # Database
 SQLAlchemy==2.0.48
 PyMySQL==1.1.2
+cryptography
 alembic
 
 # Utils

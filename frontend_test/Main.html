@@ -1839,7 +1839,7 @@
             </div>
 
             <!-- 예약 현황 패널 -->
-            <div>
+            <div id="appt-panel-section">
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
                     <h3 class="section-title">
                         <span class="tooltip-wrap">
@@ -2521,7 +2521,13 @@
 
             // ── 내담자 단위로 세션들 묶기 ──
             const clientMap = {};
-            STATE.quality.forEach(q => {
+            STATE.quality.filter(q => {
+                const hasAlert = STATE.alerts.some(a => a.sess_id === q.sess_id && a.status === 'DETECTED');
+                const sess = STATE.sessions.find(s => s.id === q.sess_id);
+                const isActive = sess && sess.progress === 'ACTIVE';
+                const isDropout = sess && sess.end_reason === 'DROPOUT'; // ← 추가
+                return isActive || hasAlert || isDropout;               // ← isDropout 추가
+            }).forEach(q => {
                 const cid = q.client_id || q.client_name; // client_id 없으면 이름으로 그룹핑
                 if (!clientMap[cid]) {
                     clientMap[cid] = {
@@ -2732,8 +2738,14 @@
 
                 let chatBtn = '<span style="color:#ccc;font-size:0.8rem;">—</span>';
                 if (st === 'CONFIRMED') {
-                    // 테스트용: 항상 상담 시작 가능 (배포 시 diffMin <= 30 으로 복원)
-                    chatBtn = `<a href="Chat_counselor.html?appt_id=${a.id}&counselor_id=${a.counselor_id}" style="display:inline-block;padding:4px 12px;background:#7389f4;color:#fff;border-radius:6px;font-size:0.78rem;font-weight:600;text-decoration:none;">상담 시작</a>`;
+                    const hasWaiting = STATE.sessions.some(s => 
+                        s.appt_id == a.id && (s.progress === 'WAITING' || s.progress === 'ACTIVE')
+                    );
+                    const btnLabel = hasWaiting ? '상담 입장' : '상담 시작';
+                    chatBtn = `<a href="Chat_counselor.html?appt_id=${a.id}&counselor_id=${a.counselor_id}"
+                        style="display:inline-block;padding:4px 12px;background:${hasWaiting ? '#3fb950' : '#7389f4'};color:#fff;border-radius:6px;font-size:0.78rem;font-weight:600;text-decoration:none;">
+                        ${btnLabel}
+                    </a>`;
                 }
 
                 return `<tr>

@@ -306,7 +306,7 @@ def client_start_session(payload: ClientStartSessionRequest, db: Session = Depen
     new_uuid = str(uuid.uuid4())
     res = db.execute(text("""
         INSERT INTO sess (uuid, counselor_id, client_id, appt_id, channel, progress)
-        VALUES (:uuid, :coid, :clid, :appt_id, 'CHAT', 'ACTIVE')
+        VALUES (:uuid, :coid, :clid, :appt_id, 'CHAT', 'WAITING')
     """), {
         "uuid": new_uuid, 
         "coid": coid, 
@@ -365,6 +365,31 @@ def get_session(sess_id: int, db: Session = Depends(get_db)):
 def get_session_status(sess_id: int, db: Session = Depends(get_db)):
     return get_session(sess_id, db)
 
+@app.patch("/sessions/{sess_id}/activate")
+def activate_session(sess_id: int, db: Session = Depends(get_db)):
+    """
+    상담사가 채팅방에 진입할 때 호출.
+    내담자가 대기 중인 세션(WAITING)을 활성 상태(ACTIVE)로 전환한다.
+    이미 ACTIVE/CLOSED인 세션에는 영향을 주지 않는다.
+    """
+    result = db.execute(text("""
+        UPDATE sess SET progress = 'ACTIVE', start_at = NOW()
+        WHERE id = :sid AND progress = 'WAITING'
+    """), {"sid": sess_id})
+    db.commit()
+
+    if result.rowcount == 0:
+        # 업데이트된 행이 없으면 — 세션이 없거나 이미 ACTIVE/CLOSED 상태
+        row = db.execute(
+            text("SELECT progress FROM sess WHERE id = :sid"), {"sid": sess_id}
+        ).scalar()
+        if not row:
+            raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+        # 이미 ACTIVE면 정상 처리 (상담사가 새로고침 등으로 중복 호출한 경우)
+        return {"status": "already_active", "progress": row}
+
+    return {"status": "activated"}
+
 # ---------------------------------------------------------
 # Messages & Alerts
 # ---------------------------------------------------------
@@ -382,7 +407,7 @@ def create_message(payload: MessageCreate, db: Session = Depends(get_db)):
         if not sess:
             raise HTTPException(status_code=404, detail="session not found")
 
-        if sess["progress"] != "ACTIVE":
+        if sess["progress"] not in ("ACTIVE", "WAITING"):
             raise HTTPException(status_code=400, detail="session closed")
         # -------------------------------
 

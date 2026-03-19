@@ -19,6 +19,7 @@ dnspython==2.8.0
 
 # DB
 sqlalchemy==2.0.48
+cryptography
 
 # Vision
 opencv-python-headless==4.12.0.88

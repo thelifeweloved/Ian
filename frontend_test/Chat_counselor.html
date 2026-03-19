@@ -208,7 +208,7 @@
                 <div class="chat-header-left">
                     <div class="avatar"><i class="fa-solid fa-user-tie"></i></div>
                     <div class="title-wrap">
-                        <h2 id="headerCounselorName">상담사</h2>
+                        <h2 id="headerCounselorName">내담자</h2>
                         <div class="session-id" id="headerSessionId">SESS-WAIT · 상담 대기 중</div>
                     </div>
                 </div>
@@ -335,10 +335,10 @@
         const clientId = _urlParams.get('client_id') || localStorage.getItem('client_id') || 1;
         const counselorId = _urlParams.get('counselor_id') || localStorage.getItem('counselor_id') || 1;
         const counselorName = localStorage.getItem('counselor_name') || '상담사';
-        
+        const clientNameForHeader = localStorage.getItem('client_name') || '내담자';
 
-        document.getElementById('displayCounselorName').innerText = counselorName;
-        document.getElementById('headerCounselorName').innerText = counselorName;
+        document.getElementById('displayCounselorName').innerText = counselorName; // 사이드바: 상담사 이름
+        document.getElementById('headerCounselorName').innerText = clientNameForHeader; // 헤더: 내담자 이름 (initSession에서 덮어씀)
 
         const counselorEmail = localStorage.getItem('counselor_email') || '이메일 정보 없음';
         const emailEl = document.getElementById('displayCounselorEmail');
@@ -455,6 +455,17 @@
                     if (container) container.innerHTML = '';
 
                     document.getElementById('headerSessionId').innerText = `SESS-${data.sess_id} · 실시간 상담 중`;
+                    
+                    // ✅ 추가 — 내담자 이름 가져와서 헤더에 표시
+                    try {
+                        const apptRes = await fetch(`${API_BASE_URL}/appointments?counselor_id=${counselorId}`);
+                        const apptData = await apptRes.json();
+                        const appt = (apptData.items || []).find(a => a.id === Number(apptId));
+                        if (appt && appt.client_name) {
+                            document.getElementById('headerCounselorName').innerText = appt.client_name;
+                        }
+                    } catch(e) {}
+
                     startSessionTimer();
 
                     // 폴링 시작 (메시지/상태 각각)
@@ -493,42 +504,33 @@
         async function pollSessionStatus() {
             if (!window._mwSessId || clientEndedShown) return;
 
-            // ── 1. heartbeat-check: 내담자 창 강제 종료 감지 ──
-            try {
-                const hbRes = await fetch(`${API_BASE_URL}/sessions/${window._mwSessId}/heartbeat-check`);
-                if (hbRes.ok) {
-                    const hb = await hbRes.json();
-                    if (hb.alive === false) {
-                        // 서버가 자동 DROPOUT 처리 완료
-                        onClientEnded(true);
-                        return;
-                    }
+            // ── 두 요청을 병렬로 동시에 날림 ──
+            const [sessResult, hbResult] = await Promise.allSettled([
+                fetch(`${API_BASE_URL}/sessions/${window._mwSessId}`).then(r => r.ok ? r.json() : null),
+                fetch(`${API_BASE_URL}/sessions/${window._mwSessId}/heartbeat-check`).then(r => r.ok ? r.json() : null),
+            ]);
+
+            if (clientEndedShown) return; // 병렬 응답 도중 이미 처리됐으면 중단
+
+            // ── 1순위: 세션 상태 직접 확인 (정상/DROPOUT 종료 모두 감지) ──
+            const sessData = sessResult.status === 'fulfilled' ? sessResult.value : null;
+            if (sessData) {
+                const progress = (sessData.progress || sessData.status || '').toUpperCase();
+                const endAt    = sessData.end_at || sessData.endAt || null;
+                if (progress === 'CLOSED' || endAt) {
+                    const endReason = (sessData.end_reason || sessData.endReason || '').toUpperCase();
+                    onClientEnded(endReason === 'DROPOUT');
+                    return;
                 }
-            } catch (e) {}
+            }
 
-            // ── 2. 세션 상태 직접 확인 (정상 종료 감지) ──
-            const urls = [
-                `${API_BASE_URL}/sessions/${window._mwSessId}`,
-                `${API_BASE_URL}/sessions/${window._mwSessId}/status`,
-            ];
-
-            for (const url of urls) {
-                try {
-                    const r = await fetch(url);
-                    if (!r.ok) continue;
-                    const data = await r.json();
-                    const sess = data.sess || data.session || data || {};
-                    const progress = sess.progress || sess.status || '';
-                    const endAt = sess.end_at || sess.endAt || null;
-
-                    if (String(progress).toUpperCase() === 'CLOSED' || endAt) {
-                        const endReason = (sess.end_reason || sess.endReason || '').toUpperCase();
-                        onClientEnded(endReason === 'DROPOUT');
-                        return;
-                    }
-                } catch (e) {}
+            // ── 2순위: heartbeat-check (인터넷 끊김 등 beacon 미전송 폴백) ──
+            const hbData = hbResult.status === 'fulfilled' ? hbResult.value : null;
+            if (hbData && hbData.alive === false) {
+                onClientEnded(true);
             }
         }
+
 
         async function fetchMessages() {
             if(!window._mwSessId || isPolling || clientEndedShown) return;
